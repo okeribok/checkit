@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Document Compliance Checker — Granite WebGPU</title>
+<style>
+/* Tufte-inspired minimalist design */
+* { margin:0; padding:0; box-sizing:border-box; }
+:root{
+  --bg:#fffff8; --text:#111; --text-light:#666; --border:#ddd; --accent:#2a5caa;
+  --success:#2d5016; --warning:#8b6914; --error:#8b1a1a; --highlight:#fff4b3;
+}
+body{
+  font-family:'ETBembo','Palatino Linotype','Book Antiqua',Palatino,'Times New Roman',serif;
+  font-size:16px; line-height:1.6; color:var(--text); background:var(--bg);
+  padding:2rem; max-width:1800px; margin:0 auto;
+}
+h1,h2,h3,h4{ font-weight:400; margin-top:1.5rem; margin-bottom:.5rem; }
+h1{ font-size:2rem; border-bottom:1px solid var(--border); padding-bottom:.5rem; }
+.section{ margin:2rem 0; padding:1.5rem; border:1px solid var(--border); background:white; }
+.controls{ display:flex; gap:1rem; flex-wrap:wrap; align-items:center; }
+.upload-group{ display:flex; flex-direction:column; gap:.5rem; }
+.upload-group label{ font-size:.9rem; color:var(--text-light); }
+button{ font-family:inherit; font-size:.9rem; padding:.5rem 1rem; border:1px solid var(--border);
+  background:white; color:var(--text); cursor:pointer; transition:all .2s; }
+button.primary{ background:var(--accent); color:white; border-color:var(--accent); }
+button.danger{ border-color:var(--error); color:var(--error); }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+.progress-bar{ width:100%; height:24px; border:1px solid var(--border); background:white; margin-top:.5rem; }
+.progress-fill{ height:100%; background:linear-gradient(90deg,#e8f0fe 0%, var(--accent) 100%); transition:width .3s; display:flex; align-items:center; padding:0 .5rem; font-size:.75rem; color:var(--text); white-space:nowrap; overflow:hidden;}
+.main-layout{ display:grid; grid-template-columns:350px 1fr; gap:2rem; margin-top:2rem; height:calc(100vh - 420px); min-height:600px; }
+.sidebar{ border:1px solid var(--border); background:white; padding:1rem; overflow-y:auto; }
+.sidebar-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; padding-bottom:.5rem; border-bottom:1px solid var(--border); }
+.requirement-tree{ list-style:none; }
+.requirement-item{ margin:.5rem 0; }
+.requirement-header{ display:flex; align-items:center; gap:.5rem; cursor:pointer; padding:.25rem; border-radius:2px; transition:background .2s; }
+.requirement-header:hover{ background:#f5f5f5; }
+.requirement-header.active{ background:#e8f0fe; }
+.requirement-title{ font-size:.85rem; flex:1; }
+.requirement-status{ font-size:.75rem; padding:.1rem .4rem; border-radius:2px; }
+.status-pass{ background:#d4edda; color:var(--success); }
+.status-fail{ background:#f8d7da; color:var(--error); }
+.status-partial{ background:#fff3cd; color:var(--warning); }
+.status-pending{ background:#e8f0fe; color:var(--accent); }
+.content-panel{ border:1px solid var(--border); background:white; padding:1.5rem; overflow-y:auto; position:relative; }
+.result-header{ margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border); }
+.requirement-id{ font-size:.85rem; color:var(--text-light); font-family:'Courier New', monospace; }
+.scores-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin:1rem 0; }
+.score-card{ border:1px solid var(--border); padding:1rem; background:#fafafa; }
+.score-value{ font-size:1.5rem; font-weight:600; }
+.fit-badge{ display:inline-block; padding:.25rem .75rem; border-radius:2px; font-size:.85rem; margin-top:.5rem; }
+.fit-S{ background:#f8d7da; color:var(--error); } .fit-M{ background:#fff3cd; color:var(--warning); } .fit-L{ background:#d4edda; color:var(--success); } .fit-XL{ background:#c3e6cb; color:var(--success); font-weight:600; }
+.matches-section{ margin-top:1.5rem; }
+.match-item{ border:1px solid var(--border); padding:1rem; margin-bottom:1rem; cursor:pointer; transition:all .2s; }
+.match-item:hover{ border-color:var(--accent); box-shadow:0 2px 4px rgba(0,0,0,.1); }
+.match-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem; }
+.match-source{ font-weight:600; color:var(--accent); }
+.match-score{ font-size:.85rem; color:var(--text-light); }
+.match-text{ font-size:.9rem; line-height:1.5; color:var(--text-light); margin-top:.5rem; }
+.match-text mark{ background:var(--highlight); padding:0 .2rem; }
+.empty-state{ text-align:center; padding:3rem; color:var(--text-light); }
+.modal{ position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); background:white; border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,.2); z-index:9999; width:80%; max-width:900px; max-height:80vh; overflow:auto; padding:1rem; }
+.modal .modal-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; }
+.modal-close{ background:transparent; border:0; font-size:1.1rem; cursor:pointer; }
+small{ color:var(--text-light); }
+@media print{ body{ padding:1rem; background:white; } .section, .controls, button{ display:none; } .main-layout{ display:block; height:auto; } .sidebar, .content-panel{ border:none; } }
+</style>
+</head>
+<body>
+<h1>Document Compliance Checker — Granite WebGPU</h1>
+
+<div class="section">
+  <h2>Setup</h2>
+  <div class="controls">
+    <button id="loadModelsBtn" class="primary">Load AI Models (WebGPU)</button>
+    <button id="clearCacheBtn" class="danger">Clear Cache & Models</button>
+    <span id="modelStatus" style="color:var(--text-light); font-size:.9rem;">Models not loaded</span>
+  </div>
+  <div id="modelProgress" style="display:none; margin-top:1rem;">
+    <div class="progress-bar"><div class="progress-fill" id="modelProgressFill" style="width:0%"></div></div>
+    <div id="modelProgressText" style="font-size:.85rem; color:var(--text-light); margin-top:.5rem;"></div>
+  </div>
+  <small id="webgpuHint" style="display:block; margin-top:.5rem; color:var(--text-light);">
+    <strong>Note:</strong> You must run this via a local server (e.g., <code>python -m http.server</code>) or a secure HTTPS context. File:// access will fail.
+    Requires a GPU with ~4GB VRAM.
+  </small>
+</div>
+
+<div class="section">
+  <h2>Documents</h2>
+  <div class="controls">
+    <div class="upload-group">
+      <label>Authoritative Document (PDF)</label>
+      <input type="file" id="authDocInput" accept=".pdf" />
+    </div>
+    <div class="upload-group">
+      <label>Tentative Documents (PDF, multiple)</label>
+      <input type="file" id="tentativeDocsInput" accept=".pdf" multiple />
+    </div>
+    <button id="processDocsBtn" disabled>Process Documents</button>
+  </div>
+  <div id="docProgress" style="display:none; margin-top:1rem;">
+    <div class="progress-bar"><div class="progress-fill" id="docProgressFill" style="width:0%"></div></div>
+    <div id="docProgressText" style="font-size:.85rem; color:var(--text-light); margin-top:.5rem;"></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Analysis</h2>
+  <div class="controls">
+    <button id="runAnalysisBtn" disabled>Run Full Analysis</button>
+    <button id="runFuzzyBtn" disabled>Run Fuzzy Only</button>
+  </div>
+  <div id="analysisProgress" style="display:none; margin-top:1rem;">
+    <div class="progress-bar"><div class="progress-fill" id="analysisProgressFill" style="width:0%"></div></div>
+    <div id="analysisProgressText" style="font-size:.85rem; color:var(--text-light); margin-top:.5rem;"></div>
+  </div>
+</div>
+
+<div id="mainLayout" class="main-layout" style="display:none;">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h3>Requirements</h3>
+      <div class="sidebar-controls">
+        <button id="expandAllBtn">Expand</button>
+        <button id="collapseAllBtn">Collapse</button>
+      </div>
+    </div>
+    <ul class="requirement-tree" id="requirementTree"></ul>
+  </div>
+  <div class="content-panel" id="contentPanel">
+    <div class="empty-state"><p>Select a requirement to view analysis results</p></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<script type="module">
+/*
+  ComplianceChecker v2
+  - Updated to Transformers.js V3 (Alpha) for better WebGPU/LLM support
+  - Uses specific 'onnx-community' models that are pre-quantized for web
+*/
+
+import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/transformers.min.js';
+
+// Configuration to fix CORS/File errors
+env.allowLocalModels = false; // Force CDN usage
+env.useBrowserCache = true;
+
+/* ---------------------------
+   State
+--------------------------- */
+const state = {
+  modelsLoaded: false,
+  embedPipeline: null,
+  llmPipeline: null,
+  authDoc: null,
+  tentativeDocs: [],
+  chunks: [],        
+  requirements: [],  
+  embeddings: {},    
+  analyses: {},      
+  webgpuAvailable: (navigator.gpu !== undefined),
+};
+
+/* ---------------------------
+   Utilities
+--------------------------- */
+function $(id){ return document.getElementById(id); }
+function setProgress(elFill, elText, pct, text){
+  if(elFill) elFill.style.width = `${pct}%`;
+  if(elText) elText.textContent = text || `${pct}%`;
+}
+function niceNumber(n){ return (Math.round(n*100)/100).toString(); }
+
+/* ---------------------------
+   Model Loading (V3)
+--------------------------- */
+async function loadModels(onProgress) {
+  onProgress('Initializing model loader...', 0);
+  
+  if (!state.webgpuAvailable) {
+    onProgress("WebGPU not available. Performance will be very slow (CPU fallback).", 0);
+  }
+
+  /* 1. Embedding Model 
+     We use a reliable ONNX-ready embedding model. 
+     Note: 'ibm-granite' specific embedding models often lack the 'model_quantized.onnx' 
+     file at the root. We use 'Xenova/all-MiniLM-L6-v2' as a robust fallback standard,
+     or 'onnx-community/all-MiniLM-L6-v2'.
+  */
+  onProgress("Loading embedding pipeline...", 10);
+  const embedModelId = 'Xenova/all-MiniLM-L6-v2'; // Very stable standard model
+  
+  try {
+    state.embedPipeline = await pipeline('feature-extraction', embedModelId, { 
+      device: state.webgpuAvailable ? 'webgpu' : 'cpu',
+      dtype: 'fp32', // Safe default for embeddings
+    });
+    onProgress("Embedding pipeline loaded", 30);
+  } catch (e) {
+    console.error("Embedding pipeline failed:", e);
+    onProgress("Embedding load failed: " + e.message, 30);
+    throw e;
+  }
+
+  /* 2. LLM Model (Granite)
+     We use 'onnx-community/granite-3.0-2b-instruct'. 
+     This is the closest reliable match to "Granite 4.0 Nano" that is currently 
+     verified to work in transformers.js V3 without custom conversion steps.
+  */
+  onProgress("Loading Granite LLM (WebGPU - ~1.5GB download)...", 35);
+  // Using Granite 3.0 2B (Instruct) from onnx-community which is optimized for web
+  const llmModelId = 'onnx-community/granite-3.0-2b-instruct'; 
+  
+  try {
+    state.llmPipeline = await pipeline('text-generation', llmModelId, { 
+      device: 'webgpu',
+      dtype: 'q4f16', // Quantized 4-bit for browser efficiency
+      progress_callback: (x) => {
+        if(x.status === 'progress') {
+           // map progress 0-100 to 35-100 overall
+           const overall = 35 + (x.progress || 0) * 0.65;
+           onProgress(`Downloading LLM weights... ${Math.round(x.progress || 0)}%`, overall);
+        }
+      }
+    });
+    onProgress("LLM pipeline loaded", 100);
+  } catch (e) {
+    console.warn("LLM pipeline failed on WebGPU:", e);
+    onProgress("LLM failed (Likely GPU memory or network error). Refresh to retry.", 100);
+    state.llmPipeline = null;
+    throw e;
+  }
+
+  state.modelsLoaded = true;
+  return true;
+}
+
+/* ---------------------------
+   Embedding Abstraction
+--------------------------- */
+async function embedText(text) {
+  const key = `emb:${hashString(text)}`;
+  if (state.embeddings[key]) return state.embeddings[key];
+
+  if (state.embedPipeline) {
+    // Transformers.js v3 returns a Tensor, we need to convert to array
+    const output = await state.embedPipeline(text, { pooling: 'mean', normalize: true });
+    // access data from tensor
+    const vec = Array.from(output.data); 
+    state.embeddings[key] = vec;
+    return vec;
+  }
+  return pseudoEmbedding(text, 384);
+}
+
+function pseudoEmbedding(text, dim=384){
+  // Offline fallback
+  const seed = Array.from(text).reduce((s,c)=> (s*31 + c.charCodeAt(0)) >>> 0, 2166136261);
+  const rng = mulberry32(seed);
+  const v = new Array(dim).fill(0).map(()=>rng()*2-1);
+  const norm = Math.sqrt(v.reduce((s,x)=>s+x*x,0));
+  return v.map(x=>x/norm);
+}
+function mulberry32(a){ return function(){ let t=a+=0x6D2B79F5; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^(t>>>14))>>>0)/4294967296; }; }
+function hashString(s){
+  let h=2166136261; for(let i=0;i<s.length;i++) h = Math.imul(h^s.charCodeAt(i), 16777619); return (h>>>0).toString(16);
+}
+
+/* ---------------------------
+   LLM Assessment
+--------------------------- */
+async function assessWithLLM(requirementText, matchChunks) {
+  // Construct a prompt format suitable for Granite Instruct
+  const context = matchChunks.map((c,i)=>`Source [${i+1}] (Page ${c.pageNum}): ${c.text}`).join('\n\n');
+  
+  const messages = [
+    { role: "system", content: "You are a compliance auditor. Analyze if the Requirement is satisfied by the Sources. Respond in this exact format:\nConfidence: <0-100>%\nFit: <S/M/L/XL>\nExplanation: <One sentence summary>" },
+    { role: "user", content: `Requirement: "${requirementText}"\n\nSources:\n${context}\n\nIs the requirement satisfied?` }
+  ];
+
+  let outputText = "";
+
+  if (state.llmPipeline) {
+    try {
+      // V3 pipeline calling convention
+      const result = await state.llmPipeline(messages, {
+        max_new_tokens: 128,
+        temperature: 0.1,
+        do_sample: false
+      });
+      // result is [{ generated_text: ... }] or array of messages
+      const raw = result[0].generated_text;
+      // Depending on model, raw might be the full list of messages or just the last string
+      // Granite/chat models usually return the full conversation array in V3 pipeline often, 
+      // but let's handle the string case safely.
+      if (Array.isArray(raw)) {
+        outputText = raw[raw.length-1].content;
+      } else if (typeof raw === 'object' && raw.content) {
+        outputText = raw.content;
+      } else {
+        outputText = String(raw);
+      }
+    } catch (e) {
+      console.warn('LLM generation error:', e);
+      outputText = "Error generating response.";
+    }
+  } else {
+     // fallback
+     return { confidence: 0, fit: 'S', explanation: "Models not loaded." };
+  }
+
+  // Parse output
+  const confMatch = outputText.match(/Confidence:\s*(\d+)/i);
+  const fitMatch = outputText.match(/Fit:\s*(S|M|L|XL)/i);
+  const expMatch = outputText.match(/Explanation:\s*(.+)/is);
+
+  const confidence = confMatch ? parseInt(confMatch[1]) : 50;
+  const fit = fitMatch ? fitMatch[1].toUpperCase() : 'M';
+  const explanation = expMatch ? expMatch[1].trim() : outputText.substring(0, 100);
+
+  return { confidence, fit, explanation };
+}
+
+/* ---------------------------
+   Cosine Similarity
+--------------------------- */
+function cosineSimilarity(a,b){
+  if(!a||!b||a.length!==b.length) return 0;
+  let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s;
+}
+
+/* ---------------------------
+   PDF Parsing & Chunking
+--------------------------- */
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+async function parsePdfFile(file, updateProgress){
+  updateProgress && updateProgress(`Parsing ${file.name}...`, 0);
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  const pages=[];
+  let fullText='';
+  for(let i=1;i<=pdf.numPages;i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(it=>it.str).join(' ');
+    pages.push({ pageNum:i, text: pageText });
+    fullText += `\n\n--- Page ${i} ---\n\n` + pageText;
+    updateProgress && updateProgress(`Parsed page ${i}/${pdf.numPages}`, Math.round((i/pdf.numPages)*100));
+  }
+  const markdown = convertToMarkdown(fullText);
+  return { name: file.name, fullText, pages, markdown };
+}
+
+function convertToMarkdown(text){
+  let md = text;
+  md = md.replace(/^([A-Z][A-Z\s]{3,})$/gm, '# $1');
+  md = md.replace(/^([A-Z][^.!?]*):$/gm, '## $1');
+  md = md.replace(/^[\-\*•]\s+(.+)$/gm, '* $1');
+  md = md.replace(/^(\d+\.)\s+(.+)$/gm, '$1 $2');
+  return md;
+}
+
+function chunkDocument(doc){
+  const lines = doc.markdown.split('\n');
+  const chunks=[];
+  let current = { headings:[], content:[], pageNum:1, tokens:0 };
+  const MAX_TOKENS = 512;
+  for(const line of lines){
+    const trimmed = line.trim();
+    if(!trimmed) continue;
+    const pageMatch = trimmed.match(/^---\s*Page\s+(\d+)\s*---$/);
+    if(pageMatch){ current.pageNum = parseInt(pageMatch[1]); continue; }
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if(headingMatch){
+      const level = headingMatch[1].length; const title = headingMatch[2];
+      if(level<=2 && current.content.length>0){ chunks.push({...current}); current = { headings:[], content:[], pageNum:current.pageNum, tokens:0 }; }
+      current.headings = current.headings.slice(0, level-1); current.headings.push(title); continue;
+    }
+    const estimatedTokens = trimmed.split(/\s+/).length;
+    if(current.tokens + estimatedTokens > MAX_TOKENS && current.content.length>0){
+      chunks.push({...current}); current = { headings:[...current.headings], content:[], pageNum:current.pageNum, tokens:0 };
+    }
+    current.content.push(trimmed); current.tokens+=estimatedTokens;
+  }
+  if(current.content.length>0) chunks.push(current);
+  return chunks.map((c,idx)=>({
+    id: `${doc.name}-chunk-${idx}`,
+    docName: doc.name,
+    headingPath: c.headings.join(' > '),
+    pageNum: c.pageNum,
+    text: c.content.join('\n'),
+    tokens: c.tokens
+  }));
+}
+
+function extractRequirementsFromAuth(authDoc){
+  const chunks = chunkDocument(authDoc);
+  const reqs = [];
+  chunks.forEach((chunk,idx)=>{
+    const lines = chunk.text.split('\n');
+    let bullets=[];
+    let current=[];
+    for(const line of lines){
+      if(line.match(/^[\*\-]\s+/) || line.match(/^\d+\.\s+/)){
+        if(current.length>0){ bullets.push(current.join(' ')); current=[]; }
+        bullets.push(line.replace(/^[\*\-\d\.]\s+/, ''));
+      } else { current.push(line); }
+    }
+    if(current.length>0) bullets.push(current.join(' '));
+    if(bullets.length===0) bullets.push(chunk.text);
+    bullets.forEach((b,bidx)=>{
+      reqs.push({
+        id: `REQ-${String(idx+1).padStart(3,'0')}-${bidx+1}`,
+        headingPath: chunk.headingPath,
+        text: b.trim(),
+        pageNum: chunk.pageNum
+      });
+    });
+  });
+  return reqs;
+}
+
+/* ---------------------------
+   Matching Logic
+--------------------------- */
+function fuzzyMatch(requirement, chunks){
+  const reqText = requirement.text.toLowerCase();
+  const words = reqText.split(/\s+/).filter(w=>w.length>3);
+  const matches=[];
+  for(const chunk of chunks){
+    const chunkText = chunk.text.toLowerCase();
+    const matchedWords = words.filter(word => chunkText.includes(word));
+    if(matchedWords.length>0){
+      matches.push({ chunk, score: matchedWords.length / words.length, matchedWords });
+    }
+  }
+  matches.sort((a,b)=>b.score-a.score);
+  const pass = matches.length>0 && matches[0].score>0.3;
+  return { status: pass? 'pass' : 'fail', matches: matches.slice(0,5) };
+}
+
+async function semanticMatch(requirement, chunks){
+  const reqVec = await embedText(requirement.text);
+  const sims = [];
+  for(const chunk of chunks){
+    const chVec = await embedText(chunk.text);
+    const sim = cosineSimilarity(reqVec,chVec);
+    sims.push({ chunk, similarity: sim });
+  }
+  sims.sort((a,b)=>b.similarity-a.similarity);
+  const top = sims.slice(0,6);
+  const topFiltered = top.filter(m=>m.similarity>0.55);
+  const avg = topFiltered.length? topFiltered.reduce((s,m)=>s+m.similarity,0)/topFiltered.length : 0;
+  const confidence = Math.min(85, Math.floor(avg*85));
+  let fit = 'S'; if(avg>0.85) fit='XL'; else if(avg>0.75) fit='L'; else if(avg>0.65) fit='M';
+  return { confidence, fit, matches: topFiltered };
+}
+
+/* ---------------------------
+   UI Logic
+--------------------------- */
+function renderRequirementTree(requirements){
+  const tree = $('requirementTree'); tree.innerHTML='';
+  requirements.forEach(req=>{
+    const li = document.createElement('li'); li.className='requirement-item';
+    const header = document.createElement('div'); header.className='requirement-header';
+    header.dataset.reqId = req.id;
+    header.onclick = (ev)=>{ selectRequirement(req.id, ev.currentTarget); };
+    const title = document.createElement('span'); title.className='requirement-title';
+    title.textContent = `${req.id}: ${req.text.substring(0,80)}${req.text.length>80?'...':''}`;
+    const status = document.createElement('span'); status.className='requirement-status status-pending';
+    status.id = `status-${req.id}`; status.textContent = '⋯';
+    header.appendChild(title); header.appendChild(status); li.appendChild(header); tree.appendChild(li);
+  });
+  $('mainLayout').style.display='grid';
+}
+
+function selectRequirement(reqId, headerEl){
+  const req = state.requirements.find(r=>r.id===reqId);
+  if(!req) return;
+  state.currentRequirement = req;
+  document.querySelectorAll('.requirement-header').forEach(h=>h.classList.remove('active'));
+  headerEl.classList.add('active');
+  const panel = $('contentPanel');
+  // Check if analyzed
+  const analysis = state.analyses[req.id];
+  if(analysis) renderAnalysis(req, analysis);
+  else panel.innerHTML = `<div class="result-header"><h2>${req.headingPath||'Requirement'}</h2><div class="requirement-id">${req.id}</div><p style="margin-top:1rem;">${req.text}</p></div><p style="color:var(--text-light);">Analysis in progress or not yet run.</p>`;
+}
+
+function renderAnalysis(req, analysis){
+  const panel = $('contentPanel');
+  
+  // Safe display of LLM result
+  const llmConf = analysis.llm ? analysis.llm.confidence : 0;
+  const llmFit = analysis.llm ? analysis.llm.fit : '-';
+  const llmExp = analysis.llm ? analysis.llm.explanation : 'Waiting for LLM...';
+
+  panel.innerHTML = `
+    <div class="result-header">
+      <h2>${req.headingPath||'Requirement'}</h2>
+      <div class="requirement-id">${req.id}</div>
+      <p style="margin-top:1rem;">${req.text}</p>
+    </div>
+    <div class="scores-grid">
+      <div class="score-card"><h4>Fuzzy Match</h4><div class="score-value">${analysis.fuzzy.status==='pass'?'✓':'✗'}</div></div>
+      <div class="score-card"><h4>Semantic Match</h4><div class="score-value">${analysis.semantic.confidence}%</div><div class="fit-badge fit-${analysis.semantic.fit}">${analysis.semantic.fit}</div></div>
+      <div class="score-card"><h4>Granite LLM</h4><div class="score-value">${llmConf}%</div><div class="fit-badge fit-${llmFit}">${llmFit}</div></div>
+    </div>
+    <div class="matches-section">
+      <h3>Matching Passages</h3>
+      ${analysis.semantic.matches.map((m,idx)=>`
+        <div class="match-item" data-chunkid="${m.chunk.id}" onclick="openChunk('${m.chunk.id}')">
+          <div class="match-header"><div class="match-source">${m.chunk.docName} — p.${m.chunk.pageNum}</div><div class="match-score">sim: ${niceNumber(m.similarity)}</div></div>
+          <div class="match-text"><mark>${escapeHtml(m.chunk.text.substring(0,300))}</mark> ${m.chunk.text.length>300?'...':''}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="margin-top:1rem;"><h4>LLM Assessment</h4><pre style="white-space:pre-wrap;background:#fafafa;padding:1rem;border:1px solid var(--border); font-family:sans-serif; font-size:0.9rem;">${escapeHtml(llmExp)}</pre></div>
+  `;
+}
+
+window.openChunk = function(chunkId){
+  const chunk = state.chunks.find(c=>c.id===chunkId);
+  if(!chunk) return alert('Chunk not found');
+  const html = `
+    <div class="modal" id="chunkModal">
+      <div class="modal-header"><strong>${chunk.docName} — p.${chunk.pageNum}</strong><button class="modal-close" onclick="document.getElementById('chunkModal')?.remove()">✕</button></div>
+      <div style="white-space:pre-wrap;">${escapeHtml(chunk.text)}</div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+};
+
+function escapeHtml(str){ return (str||'').replace(/[&<>"']/g, s=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[s])); }
+
+/* ---------------------------
+   Orchestrator
+--------------------------- */
+async function processDocuments(){
+  const authFile = $('authDocInput').files[0];
+  const tentativeFiles = Array.from($('tentativeDocsInput').files || []);
+  if(!authFile || tentativeFiles.length===0){ alert('Upload authoritative doc and at least one tentative doc'); return; }
+
+  $('processDocsBtn').disabled = true;
+  $('docProgress').style.display = 'block';
+  setProgress($('docProgressFill'), $('docProgressText'), 0, 'Starting parsing...');
+
+  // Parse Auth
+  const authDoc = await parsePdfFile(authFile, (txt,pct)=> setProgress($('docProgressFill'), $('docProgressText'), pct*0.3, txt));
+  
+  // Parse Tentative
+  const tentativeParsed = [];
+  for(let i=0;i<tentativeFiles.length;i++){
+    const f = tentativeFiles[i];
+    const pctBase = 30 + Math.round((i/tentativeFiles.length)*60);
+    const parsed = await parsePdfFile(f, (txt,pct)=> setProgress($('docProgressFill'), $('docProgressText'), pctBase + Math.round(pct*0.6), txt));
+    tentativeParsed.push(parsed);
+  }
+
+  // Chunk
+  const chunks = [];
+  tentativeParsed.forEach(doc=>{
+    const ch = chunkDocument(doc);
+    ch.forEach(c=>chunks.push(c));
+  });
+
+  // Requirements
+  const requirements = extractRequirementsFromAuth(authDoc);
+
+  // State
+  state.authDoc = authDoc;
+  state.tentativeDocs = tentativeParsed;
+  state.chunks = chunks;
+  state.requirements = requirements;
+
+  setProgress($('docProgressFill'), $('docProgressText'), 100, 'Parsing complete');
+  $('docProgress').style.display = 'none';
+  $('processDocsBtn').disabled = false;
+  $('runAnalysisBtn').disabled = false;
+  $('runFuzzyBtn').disabled = false;
+
+  renderRequirementTree(requirements);
+}
+
+async function runFuzzyOnly(){
+  if(!state.requirements.length) return;
+  $('analysisProgress').style.display='block';
+  const total = state.requirements.length;
+  for(let i=0;i<total;i++){
+    const req = state.requirements[i];
+    const fuzzy = fuzzyMatch(req, state.chunks);
+    state.analyses[req.id] = state.analyses[req.id] || { semantic: {confidence:0, fit:'S', matches:[]}, llm: null };
+    state.analyses[req.id].fuzzy = fuzzy;
+    
+    const statusEl = $(`status-${req.id}`);
+    if(statusEl) { 
+        statusEl.className = `requirement-status ${fuzzy.status==='pass'?'status-pass':'status-fail'}`; 
+        statusEl.textContent = fuzzy.status==='pass'?'✓':'✗'; 
+    }
+    setProgress($('analysisProgressFill'), $('analysisProgressText'), Math.round((i/total)*100), `Fuzzy ${i+1}/${total}`);
+    await new Promise(r=>setTimeout(r,10));
+  }
+  $('analysisProgress').style.display='none';
+}
+
+async function runFullAnalysis(){
+  if(!state.requirements.length) return;
+  if(!state.modelsLoaded) { alert("Please load models first!"); return; }
+  
+  $('analysisProgress').style.display='block';
+  const total = state.requirements.length;
+  
+  for(let i=0;i<total;i++){
+    const req = state.requirements[i];
+
+    // 1. Fuzzy
+    const fuzzy = fuzzyMatch(req, state.chunks);
+    state.analyses[req.id] = state.analyses[req.id] || {};
+    state.analyses[req.id].fuzzy = fuzzy;
+
+    // 2. Semantic
+    const semantic = await semanticMatch(req, state.chunks);
+    state.analyses[req.id].semantic = semantic;
+
+    // 3. LLM (Granite)
+    const topChunks = semantic.matches.map(m=>m.chunk).slice(0,3);
+    const llm = await assessWithLLM(req.text, topChunks);
+    state.analyses[req.id].llm = llm;
+
+    // Status logic
+    const overallPass = (fuzzy.status==='pass') || (semantic.confidence>70) || (llm.confidence>70);
+    const statusEl = $(`status-${req.id}`);
+    if(statusEl){
+      if(overallPass){ statusEl.className='requirement-status status-pass'; statusEl.textContent='✓'; }
+      else { statusEl.className='requirement-status status-partial'; statusEl.textContent='△'; }
+    }
+
+    setProgress($('analysisProgressFill'), $('analysisProgressText'), Math.round(((i+1)/total)*100), `Analyzed ${i+1}/${total}`);
+    
+    // Live update if selected
+    if(state.currentRequirement && state.currentRequirement.id===req.id) {
+        renderAnalysis(req, state.analyses[req.id]);
+    }
+    
+    // Yield to UI
+    await new Promise(r=>setTimeout(r, 20));
+  }
+  
+  setProgress($('analysisProgressFill'), $('analysisProgressText'), 100, 'Done');
+  setTimeout(()=>$('analysisProgress').style.display='none', 1000);
+}
+
+/* ---------------------------
+   Event Listeners
+--------------------------- */
+$('loadModelsBtn').onclick = async ()=>{
+  const btn = $('loadModelsBtn');
+  btn.disabled=true;
+  $('modelProgress').style.display='block';
+  const fill = $('modelProgressFill'), txt = $('modelProgressText'), status = $('modelStatus');
+  
+  try{
+    await loadModels((t,p)=>{ setProgress(fill, txt, Math.round(p), t); status.textContent = t; });
+    status.textContent = 'Models loaded (Granite WebGPU)';
+    $('modelProgress').style.display='none';
+  }catch(e){
+    console.error(e);
+    status.textContent = 'Error loading models (Check console)';
+    alert('Failed to load models. See console for details.');
+    $('modelProgress').style.display='none';
+    btn.disabled=false;
+  }
+};
+
+$('clearCacheBtn').onclick = async ()=>{
+  if(confirm('Clear all cache?')){ 
+    localStorage.clear(); 
+    if('caches' in window) {
+       try {
+         const keys = await caches.keys();
+         await Promise.all(keys.map(k=>caches.delete(k)));
+       } catch(e){}
+    }
+    location.reload(); 
+  }
+};
+
+$('authDocInput').onchange = checkProcessEnable;
+$('tentativeDocsInput').onchange = checkProcessEnable;
+function checkProcessEnable(){ 
+  $('processDocsBtn').disabled = !($('authDocInput').files.length && $('tentativeDocsInput').files.length); 
+}
+$('processDocsBtn').onclick = processDocuments;
+$('runAnalysisBtn').onclick = runFullAnalysis;
+$('runFuzzyBtn').onclick = runFuzzyOnly;
+$('expandAllBtn').onclick = ()=> document.querySelectorAll('.requirement-header').forEach(h=>h.classList.add('active'));
+$('collapseAllBtn').onclick = ()=> document.querySelectorAll('.requirement-header').forEach(h=>h.classList.remove('active'));
+
+</script>
+</body>
+</html>
