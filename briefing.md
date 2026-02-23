@@ -87,11 +87,11 @@ Checkit moet:
 -   offline kunnen werken
 -   lokaal of on-prem draaien
 -   geen externe API’s vereisen
--   data binnen de organisatie houden
+-   data binnen de machine houden
 
 Beoogde richting:
 
--   lokale inferentie via  
+-   lokale inference via Fietsbel platform met Llama.cpp, bitnet.cpp:
     (grammar, logit bias, mirostat, LoRA, meerdere modellen)
 
 Parsing-verbeteringen:
