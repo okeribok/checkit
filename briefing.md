@@ -2,7 +2,7 @@
 
 ## Doel en positionering
 
-Checkit is een **lichtgewicht, open-source hulpmiddel voor kwaliteitscontrole van formele documenten**.
+Checkit is een **lichtgewicht, open-source hulpmiddel voor kwaliteitscontrole van formele documenten (authoritatief vs tentatief)**.
 
 Het ondersteunt medewerkers bij het controleren van:
 
