@@ -1,0 +1,1418 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  CHECKIT — offline document compliance checker                   ║
+  ║  Single-file distribution. Paste libraries in the marked blocks. ║
+  ╠══════════════════════════════════════════════════════════════════╣
+  ║  connect-src 'none' = zero outbound network. All libraries       ║
+  ║  must be inlined. Models are the sole exception: loaded via      ║
+  ║  file picker, stored in IndexedDB, never leave the device.       ║
+  ║                                                                  ║
+  ║  To enable CDN model loading (dev/demo only) change              ║
+  ║  connect-src 'none' → connect-src https://cdn.jsdelivr.net       ║
+  ║                         https://huggingface.co                   ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
+<meta http-equiv="Content-Security-Policy"
+  content="default-src 'self' 'unsafe-inline' blob: data:;
+           connect-src 'none';
+           script-src 'self' 'unsafe-inline' blob:;
+           worker-src blob: 'self';">
+
+<title>Checkit</title>
+<style>
+/* ── Tokens ───────────────────────────────────────────────── */
+:root {
+  --bg:#fffff8; --surface:#fff; --border:#ddd; --text:#111; --muted:#666;
+  --accent:#2a5caa;
+  --pass:#2d5016; --pass-bg:#d4edda;
+  --warn:#8b6914; --warn-bg:#fff3cd;
+  --fail:#8b1a1a; --fail-bg:#f8d7da;
+  --font:'Palatino Linotype','Book Antiqua',Palatino,serif;
+  --mono:'Courier New',Courier,monospace;
+  --panel-w:380px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--font); font-size:16px; line-height:1.6; color:var(--text);
+       background:var(--bg); padding:2rem; max-width:1800px; margin:0 auto; }
+
+/* ── Type ─────────────────────────────────────────────────── */
+h1 { font-size:2rem; font-weight:400; border-bottom:1px solid var(--border);
+     padding-bottom:.5rem; margin-bottom:1.5rem;
+     display:flex; justify-content:space-between; align-items:center; }
+h2 { font-size:1rem; font-weight:600; margin-bottom:.6rem; }
+h3 { font-size:.9rem; font-weight:600; margin:.8rem 0 .35rem; }
+small, .muted { font-size:.85rem; color:var(--muted); }
+
+/* ── Section cards ────────────────────────────────────────── */
+.section { margin:1.5rem 0; padding:1.25rem 1.5rem; border:1px solid var(--border); background:var(--surface); }
+.controls { display:flex; gap:1rem; flex-wrap:wrap; align-items:center; }
+.upload-group { display:flex; flex-direction:column; gap:.4rem; }
+.upload-group label { font-size:.88rem; color:var(--muted); }
+
+/* ── Buttons ──────────────────────────────────────────────── */
+button { font-family:var(--font); font-size:.9rem; padding:.4rem .95rem;
+         border:1px solid var(--border); background:var(--surface); color:var(--text);
+         cursor:pointer; white-space:nowrap; transition:all .15s; }
+button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+button.danger  { color:var(--fail); border-color:#e0b0b0; }
+button.sm      { font-size:.8rem; padding:.2rem .5rem; }
+button:disabled { opacity:.45; cursor:not-allowed; }
+button:not(:disabled):hover { filter:brightness(.92); }
+label.lbl { font-size:.82rem; color:var(--muted); display:block; margin-bottom:.2rem; }
+input[type=file]   { font-size:.85rem; font-family:var(--font); }
+input[type=range]  { width:100%; accent-color:var(--accent); }
+input[type=number] { font-family:var(--mono); font-size:.87rem; width:64px;
+                     border:1px solid var(--border); padding:.2rem .4rem; }
+textarea { font-family:var(--mono); font-size:.8rem; width:100%;
+           border:1px solid var(--border); padding:.5rem; resize:vertical; line-height:1.5; }
+select { font-family:var(--font); font-size:.87rem; border:1px solid var(--border);
+         padding:.3rem .5rem; background:var(--surface); }
+
+/* ── Progress ─────────────────────────────────────────────── */
+.progress-bar  { width:100%; height:22px; border:1px solid var(--border); background:#f5f5f0; margin-top:.5rem; }
+.progress-fill { height:100%; background:linear-gradient(90deg,#c8d8f8 0%,var(--accent) 100%);
+                 transition:width .25s; display:flex; align-items:center;
+                 padding:0 .5rem; font-size:.75rem; color:var(--text); white-space:nowrap; overflow:hidden; }
+.progress-text { font-size:.82rem; color:var(--muted); margin-top:.3rem; }
+
+/* ── Badges ───────────────────────────────────────────────── */
+.badge      { display:inline-block; font-size:.75rem; padding:.1rem .4rem; font-family:var(--mono); border-radius:2px; }
+.badge-pass { background:var(--pass-bg); color:var(--pass); }
+.badge-fail { background:var(--fail-bg); color:var(--fail); }
+.badge-warn { background:var(--warn-bg); color:var(--warn); }
+.badge-info { background:#e8f0fe; color:var(--accent); }
+.status-pending { background:#e8f0fe; color:var(--accent); }
+.status-pass    { background:var(--pass-bg); color:var(--pass); }
+.status-fail    { background:var(--fail-bg); color:var(--fail); }
+.status-partial { background:var(--warn-bg); color:var(--warn); }
+
+/* ── Main layout ──────────────────────────────────────────── */
+.main-layout { display:grid; grid-template-columns:350px 1fr; gap:2rem;
+               margin-top:2rem; height:calc(100vh - 460px); min-height:600px; }
+.sidebar { border:1px solid var(--border); background:var(--surface);
+           padding:1rem; overflow-y:auto; }
+.sidebar-header { display:flex; justify-content:space-between; align-items:center;
+                  margin-bottom:1rem; padding-bottom:.5rem; border-bottom:1px solid var(--border); }
+.sidebar-header .sidebar-controls { display:flex; gap:.4rem; }
+.req-tree { list-style:none; }
+.req-item { margin:.4rem 0; }
+.req-header { display:flex; align-items:center; gap:.5rem; cursor:pointer;
+              padding:.3rem .4rem; transition:background .15s; }
+.req-header:hover { background:#f5f5f5; }
+.req-header.active { background:#e8f0fe; }
+.req-title { font-size:.85rem; flex:1; line-height:1.3; }
+.req-status { font-size:.75rem; padding:.1rem .4rem; border-radius:2px; white-space:nowrap; }
+.content-panel { border:1px solid var(--border); background:var(--surface);
+                 padding:1.5rem; overflow-y:auto; }
+.result-header { margin-bottom:1.25rem; padding-bottom:.9rem; border-bottom:1px solid var(--border); }
+.result-heading-path { font-size:.82rem; color:var(--muted); margin-bottom:.2rem; font-family:var(--mono); }
+.result-req-text { margin-top:.6rem; }
+
+/* ── Scores grid ──────────────────────────────────────────── */
+.scores-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin:1rem 0; }
+.score-card { border:1px solid var(--border); padding:.9rem 1rem; background:#fafafa; }
+.score-card h4 { font-size:.82rem; color:var(--muted); margin-bottom:.4rem; }
+.score-value { font-size:1.4rem; font-weight:600; }
+.fit-badge { display:inline-block; padding:.2rem .6rem; border-radius:2px; font-size:.82rem; margin-top:.35rem; }
+.fit-S  { background:var(--fail-bg); color:var(--fail); }
+.fit-M  { background:var(--warn-bg); color:var(--warn); }
+.fit-L  { background:var(--pass-bg); color:var(--pass); }
+.fit-XL { background:#c3e6cb; color:var(--pass); font-weight:600; }
+
+/* ── Match items ──────────────────────────────────────────── */
+.matches-section { margin-top:1.25rem; }
+.match-item { border:1px solid var(--border); padding:.9rem 1rem; margin-bottom:.85rem;
+              cursor:pointer; transition:all .15s; }
+.match-item:hover { border-color:var(--accent); box-shadow:0 2px 6px rgba(0,0,0,.1); }
+.match-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:.4rem; }
+.match-source { font-weight:600; color:var(--accent); font-size:.88rem; }
+.match-score  { font-size:.82rem; color:var(--muted); }
+.match-text   { font-size:.88rem; line-height:1.5; color:var(--muted); }
+.match-text mark { background:#fff4b3; padding:0 .15rem; }
+.llm-block { margin-top:1rem; }
+.llm-block pre { white-space:pre-wrap; background:#fafafa; padding:.85rem 1rem;
+                 border:1px solid var(--border); font-family:var(--font); font-size:.88rem; line-height:1.5; }
+.empty-state { text-align:center; padding:3rem 2rem; color:var(--muted); font-style:italic; }
+
+/* ── Model rows ───────────────────────────────────────────── */
+.model-row    { display:flex; align-items:center; padding:.4rem .6rem; border:1px solid var(--border);
+                margin-bottom:.3rem; font-size:.86rem; gap:.5rem; }
+.model-name   { flex:1; font-family:var(--mono); font-size:.8rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.model-size   { color:var(--muted); font-size:.77rem; white-space:nowrap; }
+.model-active { border-left:3px solid var(--pass); }
+
+/* ── Notices ──────────────────────────────────────────────── */
+.notice      { padding:.5rem .9rem; font-size:.85rem; border-left:3px solid var(--accent);
+               background:#e8f0fe; margin-bottom:.9rem; }
+.notice.warn { border-left-color:var(--warn); background:var(--warn-bg); }
+.toast       { position:fixed; bottom:1.5rem; right:1.5rem; background:#222; color:#fff;
+               padding:.5rem 1rem; font-size:.83rem; z-index:10000; max-width:320px;
+               opacity:0; transition:opacity .25s; pointer-events:none;
+               border-left:3px solid var(--accent); }
+.toast.show  { opacity:1; }
+
+/* ── Chunk modal ──────────────────────────────────────────── */
+.modal { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+         background:var(--surface); border:1px solid var(--border);
+         box-shadow:0 8px 32px rgba(0,0,0,.25); z-index:9999;
+         width:80%; max-width:900px; max-height:80vh; overflow:auto; padding:1.25rem; }
+.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:.9rem; }
+.modal-close  { background:transparent; border:0; font-size:1.1rem; cursor:pointer; color:var(--muted); }
+.modal-close:hover { color:var(--text); }
+
+/* ══ Settings panel ═══════════════════════════════════════ */
+#settingsOverlay { position:fixed; inset:0; background:rgba(0,0,0,.35);
+                   z-index:8000; opacity:0; pointer-events:none; transition:opacity .25s; }
+#settingsOverlay.open { opacity:1; pointer-events:all; }
+#settingsPanel { position:fixed; top:0; right:0; bottom:0; width:var(--panel-w);
+                 background:var(--surface); border-left:1px solid var(--border);
+                 z-index:8001; overflow-y:auto; padding:1.5rem 1.4rem;
+                 transform:translateX(100%); transition:transform .28s cubic-bezier(.4,0,.2,1);
+                 box-shadow:-4px 0 18px rgba(0,0,0,.15); }
+#settingsPanel.open { transform:translateX(0); }
+.sp-head { display:flex; justify-content:space-between; align-items:center;
+           margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:.6rem; }
+.sp-head h2 { margin:0; }
+.sp-close { background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--muted); }
+.sp-close:hover { color:var(--text); }
+.sp-sec { margin-bottom:1.2rem; }
+.sp-sec + .sp-sec { border-top:1px solid var(--border); padding-top:1rem; }
+.sp-sec h3 { font-size:.82rem; text-transform:uppercase; letter-spacing:.06em;
+             color:var(--muted); margin-bottom:.6rem; }
+.p-row { display:flex; justify-content:space-between; align-items:center;
+         margin-bottom:.5rem; gap:.5rem; }
+.p-row label { margin:0; flex:1; font-size:.84rem; }
+.p-val { font-family:var(--mono); font-size:.82rem; color:var(--accent); min-width:32px; text-align:right; }
+.warn-box { background:var(--warn-bg); border-left:3px solid var(--warn); color:var(--warn);
+            padding:.5rem .75rem; font-size:.8rem; line-height:1.45; margin-bottom:.7rem; }
+.cog-btn { background:none; border:none; font-size:1.35rem; cursor:pointer;
+           padding:.1rem .3rem; color:var(--muted); line-height:1; }
+.cog-btn:hover { color:var(--text); }
+
+@media print {
+  .section, button, #settingsOverlay, #settingsPanel { display:none; }
+  .main-layout { display:block; height:auto; }
+  .sidebar, .content-panel { border:none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Settings overlay -->
+<div id="settingsOverlay" onclick="closeSettings()"></div>
+<div id="settingsPanel" role="dialog">
+  <div class="sp-head">
+    <h2 id="sp-title">Instellingen</h2>
+    <button class="sp-close" onclick="closeSettings()">✕</button>
+  </div>
+
+  <div class="sp-sec">
+    <h3 id="sp-h-lang">Taal / Language</h3>
+    <div class="p-row">
+      <label>Taal</label>
+      <select id="settingsLang"><option value="NL">Nederlands</option><option value="EN">English</option></select>
+    </div>
+  </div>
+
+  <div class="sp-sec">
+    <h3 id="sp-h-models">Modellen</h3>
+    <div id="sp-modelList" style="margin-bottom:.6rem"></div>
+    <div class="upload-group" style="margin-bottom:.5rem">
+      <label class="lbl" id="sp-lbl-mf">Modelbestand (.onnx / .bin / .gguf)</label>
+      <input type="file" id="sp-modelFile" accept=".onnx,.bin,.gguf,.json"/>
+    </div>
+    <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+      <select id="sp-modelRole" style="flex:1;font-size:.82rem">
+        <option value="embedding">Embedding</option>
+        <option value="llm">LLM / Generative</option>
+      </select>
+      <button class="primary" id="sp-importBtn" disabled>Importeer</button>
+    </div>
+    <button class="danger sm" id="sp-purgeBtn" style="width:100%">Verwijder alle modellen</button>
+    <div id="sp-modelProgress" style="display:none;margin-top:.4rem">
+      <div class="progress-bar"><div class="progress-fill" id="sp-modelFill" style="width:0%">0%</div></div>
+    </div>
+    <p class="muted" style="margin-top:.4rem;font-size:.79rem" id="sp-modelNote">Modellen blijven lokaal in IndexedDB.</p>
+  </div>
+
+  <div class="sp-sec">
+    <h3 id="sp-h-fuzzy">Fuzzy matching</h3>
+    <div class="p-row"><label id="sp-ts">Levenshtein — korte woorden (≤6)</label><input type="number" id="p-threshShort" min="0" max="3" value="1"/></div>
+    <div class="p-row"><label id="sp-tl">Levenshtein — lange woorden (&gt;6)</label><input type="number" id="p-threshLong" min="0" max="4" value="2"/></div>
+    <div class="p-row"><label id="sp-mc">Min. treffers voor "gedekt"</label><input type="number" id="p-minHits" min="1" max="10" value="2"/></div>
+    <div class="p-row"><label id="sp-ov">Min. overlap voor "gedekt" (%)</label><span class="p-val" id="p-ovVal">30%</span></div>
+    <input type="range" id="p-overlap" min="5" max="80" value="30" step="5"/>
+    <div class="p-row" style="margin-top:.5rem"><label id="sp-tk">Max. resultaten per eis</label><input type="number" id="p-topk" min="1" max="20" value="5"/></div>
+  </div>
+
+  <div class="sp-sec">
+    <h3 id="sp-h-llm">LLM parameters</h3>
+    <div class="warn-box" id="sp-llm-warn">⚠ Het aanpassen van de prompt en parameters heeft grote invloed op de werking van de analyse. Gebruik "Herstel standaard" om terug te keren naar veilige waarden.</div>
+    <label class="lbl" id="sp-lbl-prompt">Systeemprompt</label>
+    <textarea id="p-prompt" rows="5"></textarea>
+    <div class="p-row" style="margin-top:.5rem"><label id="sp-lbl-temp">Temperatuur</label><span class="p-val" id="p-tempVal">0.10</span></div>
+    <input type="range" id="p-temp" min="0" max="100" value="10" step="5"/>
+    <div class="p-row" style="margin-top:.5rem"><label>Max. tokens</label><input type="number" id="p-maxTokens" min="64" max="2048" step="64" value="128"/></div>
+  </div>
+
+  <div class="sp-sec">
+    <h3 id="sp-h-cache">Sessie</h3>
+    <button class="danger" id="sp-clearSessionBtn" style="width:100%;margin-bottom:.4rem">Wis huidige sessie</button>
+    <p class="muted" style="font-size:.79rem" id="sp-cacheNote">Documenten en resultaten gewist. Modellen blijven.</p>
+  </div>
+
+  <div class="sp-sec">
+    <h3 id="sp-h-reset">Standaard</h3>
+    <button class="danger" id="sp-resetBtn" style="width:100%">Herstel alle instellingen</button>
+    <p class="muted" style="font-size:.79rem;margin-top:.4rem" id="sp-resetNote">Taal, fuzzy en LLM-instellingen hersteld. Modellen blijven.</p>
+  </div>
+</div>
+
+<!-- ── Main UI ─────────────────────────────────────────────── -->
+<h1>
+  Checkit
+  <button class="cog-btn" id="cogBtn" title="Instellingen">⚙</button>
+</h1>
+
+<div id="pdfNotice" class="notice warn" style="display:none"></div>
+
+<div class="section">
+  <h2 id="ui-h-setup">Setup</h2>
+  <div class="controls">
+    <button id="loadModelsBtn" class="primary">Laad AI-modellen (WebGPU)</button>
+    <button id="clearCacheBtn" class="danger">Wis cache &amp; modellen</button>
+    <span id="modelStatus" class="muted">Modellen niet geladen</span>
+  </div>
+  <div id="modelProgress" style="display:none;margin-top:.8rem">
+    <div class="progress-bar"><div class="progress-fill" id="modelProgressFill" style="width:0%"></div></div>
+    <div class="progress-text" id="modelProgressText"></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 id="ui-h-docs">Documenten</h2>
+  <div class="controls">
+    <div class="upload-group">
+      <label id="ui-lbl-auth">Autoritatief document (PDF of TXT)</label>
+      <input type="file" id="authDocInput" accept=".pdf,.txt"/>
+    </div>
+    <div class="upload-group">
+      <label id="ui-lbl-source">Brondocument(en) (PDF of TXT, meerdere)</label>
+      <input type="file" id="tentativeDocsInput" accept=".pdf,.txt" multiple/>
+    </div>
+    <button id="processDocsBtn" disabled>Verwerk documenten</button>
+  </div>
+  <div id="docProgress" style="display:none;margin-top:.8rem">
+    <div class="progress-bar"><div class="progress-fill" id="docProgressFill" style="width:0%"></div></div>
+    <div class="progress-text" id="docProgressText"></div>
+  </div>
+</div>
+
+<div class="section">
+  <h2 id="ui-h-analysis">Analyse</h2>
+  <div class="controls">
+    <button id="runAnalysisBtn" disabled>Volledige analyse (fuzzy + semantisch + LLM)</button>
+    <button id="runFuzzyBtn" disabled>Alleen fuzzy</button>
+    <span id="analysisStatusTxt" class="muted"></span>
+  </div>
+  <div id="analysisProgress" style="display:none;margin-top:.8rem">
+    <div class="progress-bar"><div class="progress-fill" id="analysisProgressFill" style="width:0%"></div></div>
+    <div class="progress-text" id="analysisProgressText"></div>
+  </div>
+</div>
+
+<div id="mainLayout" class="main-layout" style="display:none">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h3 id="ui-h-reqs">Eisen</h3>
+      <div class="sidebar-controls">
+        <button class="sm" id="expandAllBtn">+</button>
+        <button class="sm" id="collapseAllBtn">−</button>
+        <span id="coverageBadge" class="badge badge-info" style="font-size:.75rem">—</span>
+      </div>
+    </div>
+    <ul class="req-tree" id="reqTree"></ul>
+  </div>
+  <div class="content-panel" id="contentPanel">
+    <div class="empty-state" id="emptyState"><p>Selecteer een eis om de analyseresultaten te zien.</p></div>
+  </div>
+</div>
+
+<div id="toastEl" class="toast"></div>
+
+<!-- ════════════════════════════════════════════════════════════
+  ██ INLINE PDF.JS HERE
+     Paste the minified content of pdf.min.js (v3.11.174) below.
+     Download: https://github.com/mozilla/pdf.js/releases/tag/v3.11.174
+     File: pdfjs-3.11.174-dist.zip → build/pdf.min.js
+     After pasting, pdf.js worker is created inline from blob (see code).
+     If absent: app runs in TXT-only mode.
+════════════════════════════════════════════════════════════════ -->
+<!-- [PDF.JS PASTE START] -->
+
+<!-- [PDF.JS PASTE END]   -->
+<script>window.__pdfAvailable = (typeof pdfjsLib !== 'undefined');</script>
+
+<!-- ════════════════════════════════════════════════════════════
+  ██ INLINE TRANSFORMERS.JS HERE
+     Paste the minified content of @huggingface/transformers v3.x below.
+     Download: https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/transformers.min.js
+     After pasting, exports are available via window.__Transformers.
+     See the shim block in the module script below.
+     If absent: semantic + LLM analysis unavailable; fuzzy still works.
+════════════════════════════════════════════════════════════════ -->
+<!-- [TRANSFORMERS.JS PASTE START] -->
+<!-- [TRANSFORMERS.JS PASTE END]   -->
+
+<script type="module">
+/*
+  ════════════════════════════════════════════════════════════════════
+  CHECKIT — document compliance analysis tool
+  ────────────────────────────────────────────────────────────────────
+  Philosophy: assistant, not author. Signals only — the human decides.
+
+  TABLE OF CONTENTS
+  ─────────────────────────────────────────────────────────────────
+  §1  CONFIG & I18N          defaults, params, translations
+  §2  FUZZY WORKER           blob URL web worker (Levenshtein)
+  §3  TRANSFORMERS SHIM      access inlined library exports
+  §4  INDEXEDDB & MODELS     sideload, activate, purge
+  §5  SESSION PERSISTENCE    crash-only, 5s autosave
+  §6  PDF PARSING & CHUNKING
+  §7  MATCHING               fuzzy (worker), semantic, LLM
+  §8  UI RENDERING           tree, scores, passages, chunk modal
+  §9  EVENTS & BOOT
+  ════════════════════════════════════════════════════════════════════
+*/
+
+
+/* ════════════════════════════════════════════════════════════════
+   §1  CONFIG & I18N
+   ════════════════════════════════════════════════════════════════ */
+
+const APP_VERSION   = '0.3.0';
+const IDB_NAME      = 'checkit';
+const IDB_VER       = 1;
+const AUTOSAVE_MS   = 5000;
+const MAX_CHUNK_TOK = 512;
+
+const PARAM_DEFAULTS = Object.freeze({
+  lang:        'NL',
+  threshShort: 1,     // Levenshtein max edits ≤6 char words
+  threshLong:  2,     // Levenshtein max edits >6 char words
+  minHits:     2,     // min fuzzy hits → 'covered'
+  overlap:     30,    // min overlap % → 'covered'
+  topk:        5,     // top-k passages shown
+  temp:        0.1,   // LLM temperature
+  maxTokens:   128,   // LLM max new tokens
+  prompt:      'You are a compliance auditor. Analyze if the Requirement is satisfied by the Sources. Respond in this EXACT format:\nConfidence: <0-100>%\nFit: <S/M/L/XL>\nExplanation: <One sentence>',
+});
+
+let PARAMS = loadParams();
+function loadParams() {
+  try { return Object.assign({}, PARAM_DEFAULTS, JSON.parse(localStorage.getItem('checkit_params')||'{}')); }
+  catch { return Object.assign({}, PARAM_DEFAULTS); }
+}
+function saveParams(p) { try { localStorage.setItem('checkit_params', JSON.stringify(p)); } catch {} }
+
+const LANG = { current: PARAMS.lang || 'NL' };
+const T = {
+  NL:{
+    hSetup:'Setup', hDocs:'Documenten', hAnalysis:'Analyse', hReqs:'Eisen',
+    btnLoad:'Laad AI-modellen (WebGPU)', btnClearCache:'Wis cache & modellen',
+    modelNotLoaded:'Modellen niet geladen', modelLoaded:'Modellen geladen',
+    btnProcess:'Verwerk documenten', btnFull:'Volledige analyse (fuzzy + semantisch + LLM)',
+    btnFuzzy:'Alleen fuzzy', lblAuth:'Autoritatief document (PDF of TXT)',
+    lblSource:'Brondocument(en) (PDF of TXT, meerdere)',
+    pdfMissing:'PDF.js niet ingelinend — gebruik TXT-bestanden.',
+    emptyState:'Selecteer een eis om de analyseresultaten te zien.',
+    analyzing:'Analyseren…', done:'Klaar.', processing:'Verwerken…',
+    fuzzyMatch:'Fuzzy overeenkomst', semanticMatch:'Semantisch', llmAssess:'LLM (Granite)',
+    matchingPassages:'Overeenkomende passages', llmAssessment:'LLM-beoordeling',
+    noAnalysis:'Analyse nog niet uitgevoerd.', noModels:'Modellen niet geladen — laad eerst modellen.',
+    errNoReqs:'Geen eisen gevonden in het autoritatieve document.',
+    coverage:'Dekking', noResults:'Voer een analyse uit.',
+    modelImported:'Model opgeslagen.', modelPurged:'Alle modellen verwijderd.',
+    modelActivated:'Model geactiveerd.', modelDeleted:'Model verwijderd.',
+    sessionCleared:'Sessie gewist.', sessionRestored:'Sessie hersteld.',
+    settingsReset:'Instellingen hersteld.', importingModel:'Opslaan…',
+    purgeConfirm:'Alle modellen verwijderen?',
+    clearConfirm:'Sessie wissen? Documenten en resultaten gaan verloren.',
+    resetConfirm:'Alle instellingen herstellen?',
+    btnDelete:'Verwijder', btnActivate:'Activeer',
+    spTitle:'Instellingen', spHLang:'Taal', spHModels:'Modellen',
+    spHFuzzy:'Fuzzy matching', spHLlm:'LLM parameters',
+    spHCache:'Sessie', spHReset:'Standaard',
+    spMf:'Modelbestand (.onnx / .bin / .gguf)',
+    spLlmWarn:'⚠ Aanpassen heeft grote invloed op de analyse. Gebruik "Herstel standaard" voor veilige waarden.',
+    spCacheNote:'Documenten en resultaten gewist. Modellen blijven.',
+    spResetNote:'Taal, fuzzy en LLM-instellingen hersteld. Modellen blijven.',
+    spTs:'Levenshtein — korte woorden (≤6)', spTl:'Levenshtein — lange woorden (>6)',
+    spMc:'Min. treffers voor "gedekt"', spOv:'Min. overlap voor "gedekt" (%)',
+    spTk:'Max. resultaten per eis', spLblPrompt:'Systeemprompt', spLblTemp:'Temperatuur',
+  },
+  EN:{
+    hSetup:'Setup', hDocs:'Documents', hAnalysis:'Analysis', hReqs:'Requirements',
+    btnLoad:'Load AI Models (WebGPU)', btnClearCache:'Clear cache & models',
+    modelNotLoaded:'Models not loaded', modelLoaded:'Models loaded',
+    btnProcess:'Process documents', btnFull:'Full analysis (fuzzy + semantic + LLM)',
+    btnFuzzy:'Fuzzy only', lblAuth:'Authoritative document (PDF or TXT)',
+    lblSource:'Source document(s) (PDF or TXT, multiple)',
+    pdfMissing:'PDF.js not inlined — use TXT files.',
+    emptyState:'Select a requirement to view analysis results.',
+    analyzing:'Analyzing…', done:'Done.', processing:'Processing…',
+    fuzzyMatch:'Fuzzy match', semanticMatch:'Semantic', llmAssess:'LLM (Granite)',
+    matchingPassages:'Matching passages', llmAssessment:'LLM Assessment',
+    noAnalysis:'Analysis not yet run.', noModels:'Models not loaded — load models first.',
+    errNoReqs:'No requirements found in the authoritative document.',
+    coverage:'Coverage', noResults:'Run an analysis first.',
+    modelImported:'Model saved.', modelPurged:'All models deleted.',
+    modelActivated:'Model activated.', modelDeleted:'Model deleted.',
+    sessionCleared:'Session cleared.', sessionRestored:'Session restored.',
+    settingsReset:'Settings restored.', importingModel:'Saving…',
+    purgeConfirm:'Delete all models?',
+    clearConfirm:'Clear session? Documents and results will be lost.',
+    resetConfirm:'Restore all settings to defaults?',
+    btnDelete:'Delete', btnActivate:'Activate',
+    spTitle:'Settings', spHLang:'Language', spHModels:'Models',
+    spHFuzzy:'Fuzzy matching', spHLlm:'LLM parameters',
+    spHCache:'Session', spHReset:'Defaults',
+    spMf:'Model file (.onnx / .bin / .gguf)',
+    spLlmWarn:'⚠ Changing these parameters greatly influences analysis behaviour. Use "Restore defaults" to return to safe values.',
+    spCacheNote:'Documents and results cleared. Models are preserved.',
+    spResetNote:'Language, fuzzy and LLM settings restored. Models preserved.',
+    spTs:'Levenshtein — short words (≤6)', spTl:'Levenshtein — long words (>6)',
+    spMc:'Min. hits for "covered"', spOv:'Min. overlap for "covered" (%)',
+    spTk:'Max. results per requirement', spLblPrompt:'System prompt', spLblTemp:'Temperature',
+  },
+};
+function t(k) { return (T[LANG.current]||T.NL)[k] || k; }
+
+/* Obligation signal words — two-language requirement detection */
+const OBLIGATION_NL = ['moet','moeten','dient','dienen','is verplicht','zijn verplicht','mag niet','mogen niet','dient te'];
+const OBLIGATION_EN = ['shall','must','is required','are required','must not','shall not','needs to'];
+const OBLIGATION_WORDS = [...OBLIGATION_NL, ...OBLIGATION_EN];
+
+/* Structural words excluded from fuzzy score tallying.
+   Levenshtein still fires on them — they just don't count as meaningful hits.
+   This is correct: we want morphological matching but not meaningless noise. */
+const STOPWORDS = new Set([
+  'de','het','een','van','in','is','op','te','en','dat','die','voor','met','zijn','aan',
+  'als','ook','maar','er','bij','dan','uit','of','om','nog','wel','niet','werd','wordt',
+  'kan','moet','dient','heeft','worden','had','was','zal','zullen','deze','dit','door',
+  'over','naar','zij','hun','hem','haar','ons','wij','alle','reeds',
+  'the','a','an','of','in','is','to','for','and','or','that','this','with','from',
+  'be','are','was','not','shall','will','may','should','its','it','at','by','as',
+  'on','if','all','each','which','their','they','have','has','been','would','could',
+  'any','no','do','does',
+]);
+
+
+/* ════════════════════════════════════════════════════════════════
+   §2  FUZZY WORKER  (blob URL — no external files)
+   ════════════════════════════════════════════════════════════════
+   The worker receives: { type:'MATCH', requirements, chunks, params }
+   It returns:          { type:'MATCH_RESULT', results: { [reqId]: fuzzyResult } }
+   Running Levenshtein off the main thread keeps the UI responsive.    */
+
+const WORKER_SRC = /* javascript */`
+'use strict';
+
+const STOPWORDS = new Set(${JSON.stringify([...STOPWORDS])});
+
+function levenshtein(a,b){
+  const m=a.length,n=b.length;
+  if(!m)return n; if(!n)return m;
+  let prev=Array.from({length:n+1},(_,i)=>i),curr=new Array(n+1);
+  for(let i=1;i<=m;i++){
+    curr[0]=i;
+    for(let j=1;j<=n;j++)
+      curr[j]=a[i-1]===b[j-1]?prev[j-1]:1+Math.min(prev[j],curr[j-1],prev[j-1]);
+    [prev,curr]=[curr,prev];
+  }
+  return prev[n];
+}
+
+function tokenise(text){
+  return text.toLowerCase()
+    .replace(/[^\\wáàäâéèëêíìïîóòöôúùüûçñ]/g,' ')
+    .split(/\\s+/).filter(w=>w.length>=3);
+}
+
+function matchReq(req, chunks, params){
+  const {threshShort,threshLong,minHits,overlap,topk} = params;
+  const reqToks = tokenise(req.text).filter(w=>!STOPWORDS.has(w));
+  if(!reqToks.length) return {status:'gap',matches:[],reqTokens:[]};
+
+  const scored = chunks.map(chunk=>{
+    const secSet=new Set(tokenise((chunk.headingPath||'')+' '+chunk.text));
+    const hits=[];
+    for(const rt of reqToks){
+      if(STOPWORDS.has(rt)) continue;
+      if(secSet.has(rt)){ hits.push(rt); continue; }
+      for(const st of secSet){
+        if(STOPWORDS.has(st)) continue;
+        if(Math.abs(rt.length-st.length)>4) continue;
+        const thr = rt.length<=6 ? threshShort : threshLong;
+        if(levenshtein(rt,st)<=thr){ hits.push(rt); break; }
+      }
+    }
+    return {chunk, hits, overlap:hits.length/reqToks.length, score:hits.length};
+  }).filter(r=>r.score>0).sort((a,b)=>b.score-a.score);
+
+  const strong = scored.filter(r=>r.score>=minHits||r.overlap*100>=overlap);
+  const weak   = scored.filter(r=>r.score<minHits&&r.overlap*100<overlap);
+  const status = strong.length?'pass':weak.length?'partial':'fail';
+  return {status, matches:[...strong,...weak].slice(0,topk), reqTokens:reqToks};
+}
+
+self.onmessage = function(e){
+  const {type, requirements, chunks, params} = e.data;
+  if(type!=='MATCH') return;
+  const results={};
+  for(let i=0;i<requirements.length;i++){
+    results[requirements[i].id] = matchReq(requirements[i], chunks, params);
+    if(i%25===0) self.postMessage({type:'PROGRESS',pct:Math.round((i/requirements.length)*100),i});
+  }
+  self.postMessage({type:'MATCH_RESULT',results});
+};
+`;
+
+function createFuzzyWorker() {
+  const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+  return new Worker(URL.createObjectURL(blob));
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   §3  TRANSFORMERS SHIM
+   ════════════════════════════════════════════════════════════════
+   When transformers.js is inlined as a module script that exposes
+   exports to window.__Transformers, this shim picks them up.
+   If not inlined, it attempts a dynamic CDN import (dev only).
+   If that also fails, semantic + LLM features are unavailable.     */
+
+let pipeline = null, tfEnv = null;
+let transformersReady = false;
+
+async function loadTransformers() {
+  if (transformersReady) return true;
+  // 1. Check for inlined version
+  if (window.__Transformers) {
+    pipeline = window.__Transformers.pipeline;
+    tfEnv    = window.__Transformers.env;
+    transformersReady = true;
+    return true;
+  }
+  // 2. Dev fallback — CDN (blocked by CSP in production)
+  try {
+    const mod = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/dist/transformers.min.js');
+    pipeline = mod.pipeline; tfEnv = mod.env;
+    if (tfEnv) { tfEnv.allowLocalModels = false; tfEnv.useBrowserCache = true; }
+    transformersReady = true;
+    return true;
+  } catch(e) {
+    console.warn('[Checkit] Transformers.js not available:', e.message);
+    return false;
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   §4  INDEXEDDB & MODEL MANAGEMENT
+   ════════════════════════════════════════════════════════════════ */
+
+let _db = null;
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open(IDB_NAME, IDB_VER);
+    r.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('models'))   db.createObjectStore('models',  {keyPath:'id'});
+      if (!db.objectStoreNames.contains('sessions')) db.createObjectStore('sessions',{keyPath:'id'});
+    };
+    r.onsuccess = e => { _db=e.target.result; res(_db); };
+    r.onerror   = e => rej(e.target.error);
+  });
+}
+async function idbPut(store,rec)  { const db=await openDB(); return new Promise((r,x)=>{ const t=db.transaction(store,'readwrite'),q=t.objectStore(store).put(rec); q.onsuccess=()=>r(q.result); q.onerror=e=>x(e.target.error); }); }
+async function idbGet(store,key)  { const db=await openDB(); return new Promise((r,x)=>{ const t=db.transaction(store,'readonly'), q=t.objectStore(store).get(key);  q.onsuccess=()=>r(q.result||null); q.onerror=e=>x(e.target.error); }); }
+async function idbGetAll(store)   { const db=await openDB(); return new Promise((r,x)=>{ const t=db.transaction(store,'readonly'), q=t.objectStore(store).getAll();    q.onsuccess=()=>r(q.result||[]); q.onerror=e=>x(e.target.error); }); }
+async function idbDelete(store,k) { const db=await openDB(); return new Promise((r,x)=>{ const t=db.transaction(store,'readwrite'),q=t.objectStore(store).delete(k);    q.onsuccess=()=>r(); q.onerror=e=>x(e.target.error); }); }
+async function idbClear(store)    { const db=await openDB(); return new Promise((r,x)=>{ const t=db.transaction(store,'readwrite'),q=t.objectStore(store).clear();       q.onsuccess=()=>r(); q.onerror=e=>x(e.target.error); }); }
+
+async function importModelFile(file, role) {
+  setFill('sp-modelFill', 20, t('importingModel'));
+  $('sp-modelProgress').style.display = 'block';
+  const buf = await file.arrayBuffer();
+  setFill('sp-modelFill', 75, t('importingModel'));
+  await idbPut('models',{ id:`model_${Date.now()}`, name:file.name, size:file.size,
+                          role, data:buf, storedAt:new Date().toISOString(), active:false });
+  setFill('sp-modelFill',100, t('modelImported'));
+  setTimeout(()=>{ $('sp-modelProgress').style.display='none'; },700);
+  toast(t('modelImported'));
+  await renderSpModelList();
+}
+
+async function activateModel(id) {
+  const all = await idbGetAll('models');
+  const target = all.find(m=>m.id===id);
+  if (!target) return;
+  // Only one active per role
+  for (const m of all) { m.active = (m.id===id || (m.active && m.role!==target.role)); await idbPut('models',m); }
+  APP.modelsById[id] = target;
+  toast(t('modelActivated'));
+  await renderSpModelList();
+}
+
+async function deleteModel(id) {
+  await idbDelete('models', id);
+  delete APP.modelsById[id];
+  toast(t('modelDeleted'));
+  await renderSpModelList();
+}
+
+async function purgeAllModels() {
+  if (!confirm(t('purgeConfirm'))) return;
+  APP.embedPipeline = APP.llmPipeline = null;
+  APP.modelsLoaded  = false;
+  APP.modelsById    = {};
+  await idbClear('models');
+  $('modelStatus').textContent = t('modelNotLoaded');
+  toast(t('modelPurged'));
+  await renderSpModelList();
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   §5  APPLICATION STATE & SESSION PERSISTENCE
+   ════════════════════════════════════════════════════════════════ */
+
+const APP = {
+  modelsLoaded:    false,
+  embedPipeline:   null,
+  llmPipeline:     null,
+  modelsById:      {},
+  webgpuAvailable: !!navigator.gpu,
+  authDoc:         null,
+  tentativeDocs:   [],
+  chunks:          [],
+  requirements:    [],
+  embeddings:      {},
+  analyses:        {},
+  currentReqId:    null,
+};
+
+async function saveSession() {
+  try {
+    await idbPut('sessions',{
+      id:'current', savedAt:new Date().toISOString(),
+      requirements:APP.requirements, chunks:APP.chunks,
+      analyses:APP.analyses, currentReqId:APP.currentReqId,
+    });
+  } catch {}
+}
+
+async function loadSession() {
+  try {
+    const s = await idbGet('sessions','current');
+    if (s && (s.requirements||[]).length) {
+      APP.requirements  = s.requirements;
+      APP.chunks        = s.chunks || [];
+      APP.analyses      = s.analyses || {};
+      APP.currentReqId  = s.currentReqId || null;
+      toast(t('sessionRestored'));
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+async function clearSession() {
+  if (!confirm(t('clearConfirm'))) return;
+  APP.requirements=[]; APP.chunks=[]; APP.analyses={}; APP.currentReqId=null;
+  await idbDelete('sessions','current');
+  $('mainLayout').style.display='none';
+  $('runAnalysisBtn').disabled = $('runFuzzyBtn').disabled = true;
+  toast(t('sessionCleared'));
+}
+
+let _autosaveTimer = null;
+function startAutosave() {
+  if (_autosaveTimer) clearInterval(_autosaveTimer);
+  _autosaveTimer = setInterval(saveSession, AUTOSAVE_MS);
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   §6  PDF PARSING & CHUNKING  (from checkit1, TXT fallback added)
+   ════════════════════════════════════════════════════════════════ */
+
+async function parsePdfFile(file, onProgress) {
+  if (file.name.toLowerCase().endsWith('.txt')) {
+    const text = await file.text();
+    const fakeDoc = { name:file.name, fullText:text, pages:[{pageNum:1,text}], markdown:text };
+    return fakeDoc;
+  }
+  if (!window.__pdfAvailable) throw new Error(t('pdfMissing'));
+
+  onProgress && onProgress(`Inlezen ${file.name}…`, 0);
+  const arrayBuffer = await file.arrayBuffer();
+
+  // Worker created from inline blob — no pdf.worker.min.js file needed
+  const workerCode = `importScripts('');`; // placeholder; pdfjs uses MessageChannel internally
+  // For inlined pdf.js we create a fake workerSrc that satisfies pdfjs
+  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(
+    new Blob(['/* inline worker shim */'], {type:'application/javascript'})
+  );
+
+  const pdf   = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+  const pages = [];
+  let fullText = '';
+  for (let i=1; i<=pdf.numPages; i++) {
+    const page    = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(it=>it.str).join(' ');
+    pages.push({pageNum:i, text:pageText});
+    fullText += `\n\n--- Page ${i} ---\n\n` + pageText;
+    onProgress && onProgress(`Pagina ${i}/${pdf.numPages}`, Math.round((i/pdf.numPages)*100));
+  }
+  const markdown = convertToMarkdown(fullText);
+  return {name:file.name, fullText, pages, markdown};
+}
+
+function convertToMarkdown(text) {
+  let md = text;
+  md = md.replace(/^([A-Z][A-Z\s]{3,})$/gm, '# $1');
+  md = md.replace(/^([A-Z][^.!?]*):$/gm, '## $1');
+  md = md.replace(/^[\-\*•]\s+(.+)$/gm, '* $1');
+  md = md.replace(/^(\d+\.)\s+(.+)$/gm, '$1 $2');
+  return md;
+}
+
+function chunkDocument(doc) {
+  const lines  = doc.markdown.split('\n');
+  const chunks = [];
+  let cur = {headings:[], content:[], pageNum:1, tokens:0};
+  for (const line of lines) {
+    const trimmed = line.trim(); if (!trimmed) continue;
+    const pgMatch = trimmed.match(/^---\s*Page\s+(\d+)\s*---$/);
+    if (pgMatch) { cur.pageNum = parseInt(pgMatch[1]); continue; }
+    const hMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (hMatch) {
+      const lv = hMatch[1].length, title = hMatch[2];
+      if (lv<=2 && cur.content.length) { chunks.push({...cur}); cur={headings:[],content:[],pageNum:cur.pageNum,tokens:0}; }
+      cur.headings = cur.headings.slice(0,lv-1); cur.headings.push(title); continue;
+    }
+    const est = trimmed.split(/\s+/).length;
+    if (cur.tokens + est > MAX_CHUNK_TOK && cur.content.length) {
+      chunks.push({...cur}); cur={headings:[...cur.headings],content:[],pageNum:cur.pageNum,tokens:0};
+    }
+    cur.content.push(trimmed); cur.tokens += est;
+  }
+  if (cur.content.length) chunks.push(cur);
+  return chunks.map((c,idx)=>({
+    id:`${doc.name}-chunk-${idx}`,
+    docName:doc.name,
+    headingPath:c.headings.join(' > '),
+    pageNum:c.pageNum,
+    text:c.content.join('\n'),
+    tokens:c.tokens,
+  }));
+}
+
+function extractRequirementsFromAuth(authDoc) {
+  const chunks = chunkDocument(authDoc);
+  const reqs = [];
+  chunks.forEach((chunk,idx)=>{
+    const lines = chunk.text.split('\n');
+    let bullets=[], current=[];
+    for (const line of lines) {
+      if (line.match(/^[\*\-]\s+/) || line.match(/^\d+\.\s+/)) {
+        if (current.length) { bullets.push(current.join(' ')); current=[]; }
+        bullets.push(line.replace(/^[\*\-\d\.]\s+/,''));
+      } else { current.push(line); }
+    }
+    if (current.length) bullets.push(current.join(' '));
+    if (!bullets.length) bullets.push(chunk.text);
+    // Also extract obligation-sentences if no bullet structure
+    const allLines = chunk.text.split(/[.!?]+/).map(s=>s.trim()).filter(s=>s.length>20);
+    const oblLines = allLines.filter(l=>OBLIGATION_WORDS.some(w=>l.toLowerCase().includes(w)));
+    const source   = (bullets.length>1 || !oblLines.length) ? bullets : oblLines;
+    source.forEach((b,bidx)=>{
+      if (b.trim().length < 15) return;
+      reqs.push({
+        id:`REQ-${String(idx+1).padStart(3,'0')}-${bidx+1}`,
+        headingPath:chunk.headingPath,
+        text:b.trim(),
+        pageNum:chunk.pageNum,
+      });
+    });
+  });
+  return reqs;
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   §7  MATCHING
+   ════════════════════════════════════════════════════════════════ */
+
+/* §7a  Fuzzy — runs in worker, Levenshtein-based ───────────── */
+async function runFuzzyAnalysis(onProgress) {
+  return new Promise((resolve)=>{
+    const worker = createFuzzyWorker();
+    const params = {
+      threshShort: PARAMS.threshShort,
+      threshLong:  PARAMS.threshLong,
+      minHits:     PARAMS.minHits,
+      overlap:     PARAMS.overlap,
+      topk:        PARAMS.topk,
+    };
+    worker.onmessage = e => {
+      if (e.data.type==='PROGRESS') { onProgress(e.data.pct,`Fuzzy ${e.data.i+1}/${APP.requirements.length}`); return; }
+      if (e.data.type==='MATCH_RESULT') {
+        for (const [id,res] of Object.entries(e.data.results)) {
+          APP.analyses[id] = APP.analyses[id] || {};
+          APP.analyses[id].fuzzy = res;
+          updateSidebarStatus(id);
+        }
+        worker.terminate();
+        resolve();
+      }
+    };
+    worker.postMessage({type:'MATCH', requirements:APP.requirements, chunks:APP.chunks, params});
+  });
+}
+
+/* §7b  Semantic — cosine similarity on embeddings ─────────── */
+function hashStr(s) { let h=2166136261; for(let i=0;i<s.length;i++) h=Math.imul(h^s.charCodeAt(i),16777619); return (h>>>0).toString(16); }
+function mulberry32(a){ return function(){ let t=a+=0x6D2B79F5; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return((t^(t>>>14))>>>0)/4294967296; }; }
+function pseudoEmbedding(text,dim=384){
+  const seed=Array.from(text).reduce((s,c)=>(s*31+c.charCodeAt(0))>>>0,2166136261);
+  const rng=mulberry32(seed);
+  const v=new Array(dim).fill(0).map(()=>rng()*2-1);
+  const norm=Math.sqrt(v.reduce((s,x)=>s+x*x,0));
+  return v.map(x=>x/norm);
+}
+function cosineSimilarity(a,b) {
+  if(!a||!b||a.length!==b.length) return 0;
+  let s=0; for(let i=0;i<a.length;i++) s+=a[i]*b[i]; return s;
+}
+
+async function embedText(text) {
+  const key = `emb:${hashStr(text)}`;
+  if (APP.embeddings[key]) return APP.embeddings[key];
+  if (APP.embedPipeline) {
+    const out = await APP.embedPipeline(text,{pooling:'mean',normalize:true});
+    const vec  = Array.from(out.data);
+    APP.embeddings[key] = vec; return vec;
+  }
+  return pseudoEmbedding(text);
+}
+
+async function semanticMatch(req, chunks) {
+  const reqVec = await embedText(req.text);
+  const sims = [];
+  for (const chunk of chunks) {
+    const chVec = await embedText(chunk.text);
+    sims.push({chunk, similarity:cosineSimilarity(reqVec,chVec)});
+  }
+  sims.sort((a,b)=>b.similarity-a.similarity);
+  const top      = sims.slice(0,6).filter(m=>m.similarity>0.55);
+  const avg      = top.length ? top.reduce((s,m)=>s+m.similarity,0)/top.length : 0;
+  const conf     = Math.min(85, Math.floor(avg*85));
+  let fit='S'; if(avg>0.85) fit='XL'; else if(avg>0.75) fit='L'; else if(avg>0.65) fit='M';
+  return {confidence:conf, fit, matches:top};
+}
+
+/* §7c  LLM assessment ─────────────────────────────────────── */
+async function assessWithLLM(requirementText, matchChunks) {
+  if (!APP.llmPipeline) return {confidence:0, fit:'S', explanation:'LLM not loaded.'};
+  const context = matchChunks.slice(0,3).map((c,i)=>`Source [${i+1}] (p.${c.pageNum}): ${c.text}`).join('\n\n');
+  const messages = [
+    {role:'system', content: PARAMS.prompt},
+    {role:'user',   content:`Requirement: "${requirementText}"\n\nSources:\n${context}\n\nIs the requirement satisfied?`},
+  ];
+  let outputText='';
+  try {
+    const result = await APP.llmPipeline(messages,{max_new_tokens:PARAMS.maxTokens, temperature:PARAMS.temp, do_sample:false});
+    const raw = result[0].generated_text;
+    if (Array.isArray(raw))                       outputText = raw[raw.length-1].content;
+    else if (typeof raw==='object'&&raw.content)  outputText = raw.content;
+    else                                          outputText = String(raw);
+  } catch(e) { console.warn('[LLM]',e); outputText='Error.'; }
+  const confM = outputText.match(/Confidence:\s*(\d+)/i);
+  const fitM  = outputText.match(/Fit:\s*(S|M|L|XL)/i);
+  const expM  = outputText.match(/Explanation:\s*(.+)/is);
+  return {
+    confidence: confM ? parseInt(confM[1]) : 50,
+    fit:        fitM  ? fitM[1].toUpperCase() : 'M',
+    explanation:expM  ? expM[1].trim() : outputText.substring(0,150),
+  };
+}
+
+/* §7d  Orchestrators ───────────────────────────────────────── */
+async function runFuzzyOnly(onProgress) {
+  setAnalysisProgress(true);
+  $('analysisStatusTxt').textContent = t('analyzing');
+  await runFuzzyAnalysis((pct,lbl)=>{
+    setFill('analysisProgressFill',pct,lbl);
+    $('analysisProgressText').textContent=lbl;
+  });
+  onProgress && onProgress();
+  $('analysisStatusTxt').textContent = t('done');
+  setAnalysisProgress(false);
+  await saveSession();
+  renderTree(APP.requirements);
+}
+
+async function runFullAnalysis(onProgress) {
+  if (!APP.modelsLoaded) { toast(t('noModels')); return; }
+  setAnalysisProgress(true);
+  const total = APP.requirements.length;
+  for (let i=0; i<total; i++) {
+    const req = APP.requirements[i];
+    APP.analyses[req.id] = APP.analyses[req.id] || {};
+    // Fuzzy (quick, inline — worker reserved for batch; do single inline here for live update)
+    APP.analyses[req.id].fuzzy = APP.analyses[req.id].fuzzy || {status:'fail',matches:[],reqTokens:[]};
+    // Semantic
+    APP.analyses[req.id].semantic = await semanticMatch(req, APP.chunks);
+    // LLM
+    const topChunks = APP.analyses[req.id].semantic.matches.map(m=>m.chunk);
+    APP.analyses[req.id].llm = await assessWithLLM(req.text, topChunks);
+    updateSidebarStatus(req.id);
+    if (APP.currentReqId===req.id) renderAnalysis(req, APP.analyses[req.id]);
+    const pct = Math.round(((i+1)/total)*100);
+    setFill('analysisProgressFill',pct,`${i+1}/${total}`);
+    $('analysisProgressText').textContent = `Req ${i+1}/${total}: ${req.id}`;
+    await new Promise(r=>setTimeout(r,10));
+  }
+  $('analysisStatusTxt').textContent = t('done');
+  setAnalysisProgress(false);
+  await saveSession();
+}
+
+
+/* ════════════════════════════════════════════════════════════════
+   §8  UI RENDERING
+   ════════════════════════════════════════════════════════════════ */
+
+function $(id) { return document.getElementById(id); }
+function esc(s) { return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatBytes(n) { if(n<1048576)return`${(n/1024).toFixed(0)} KB`; if(n<1073741824)return`${(n/1048576).toFixed(1)} MB`; return`${(n/1073741824).toFixed(2)} GB`; }
+function nice(n) { return (Math.round(n*100)/100).toString(); }
+
+let _toastTimer=null;
+function toast(msg) {
+  const el=$('toastEl'); el.textContent=msg; el.classList.add('show');
+  clearTimeout(_toastTimer); _toastTimer=setTimeout(()=>el.classList.remove('show'),2800);
+}
+function setFill(id,pct,label) {
+  const el=$(id); if(!el) return;
+  el.style.width=`${Math.min(100,Math.max(0,pct))}%`;
+  el.textContent=label||`${pct}%`;
+}
+function setAnalysisProgress(show) {
+  $('analysisProgress').style.display = show?'block':'none';
+}
+
+function applyTranslations() {
+  const map = {
+    'ui-h-setup':t('hSetup'),'ui-h-docs':t('hDocs'),'ui-h-analysis':t('hAnalysis'),
+    'ui-h-reqs':t('hReqs'),'ui-lbl-auth':t('lblAuth'),'ui-lbl-source':t('lblSource'),
+    'loadModelsBtn':t('btnLoad'),'clearCacheBtn':t('btnClearCache'),
+    'runAnalysisBtn':t('btnFull'),'runFuzzyBtn':t('btnFuzzy'),
+    'btnProcess':t('btnProcess'),'emptyState':t('emptyState'),
+    'sp-title':t('spTitle'),'sp-h-lang':t('spHLang'),'sp-h-models':t('spHModels'),
+    'sp-h-fuzzy':t('spHFuzzy'),'sp-h-llm':t('spHLlm'),
+    'sp-h-cache':t('spHCache'),'sp-h-reset':t('spHReset'),
+    'sp-lbl-mf':t('spMf'),'sp-llm-warn':t('spLlmWarn'),
+    'sp-cacheNote':t('spCacheNote'),'sp-resetNote':t('spResetNote'),
+    'sp-ts':t('spTs'),'sp-tl':t('spTl'),'sp-mc':t('spMc'),
+    'sp-ov':t('spOv'),'sp-tk':t('spTk'),
+    'sp-lbl-prompt':t('spLblPrompt'),'sp-lbl-temp':t('spLblTemp'),
+    'sp-clearSessionBtn':t('spHCache')+' — '+t('sessionCleared').replace('.',':'),
+    'sp-resetBtn':'Herstel alle instellingen',
+    'sp-modelNote':t('modelImported').replace('.',''),
+  };
+  for(const [id,text] of Object.entries(map)){ const el=$(id); if(el&&!el.children.length) el.textContent=text; }
+  const pn=$('pdfNotice');
+  if (!window.__pdfAvailable) { pn.textContent=t('pdfMissing'); pn.style.display='block'; }
+  else pn.style.display='none';
+}
+
+function applyParamsToUI() {
+  const s=(id,v)=>{ const el=$(id); if(el)el.value=v; };
+  s('p-threshShort',PARAMS.threshShort); s('p-threshLong',PARAMS.threshLong);
+  s('p-minHits',PARAMS.minHits); s('p-overlap',PARAMS.overlap); s('p-topk',PARAMS.topk);
+  s('p-temp',Math.round(PARAMS.temp*100)); s('p-maxTokens',PARAMS.maxTokens);
+  s('p-prompt',PARAMS.prompt);
+  $('p-ovVal').textContent   = PARAMS.overlap+'%';
+  $('p-tempVal').textContent = PARAMS.temp.toFixed(2);
+  $('settingsLang').value    = LANG.current;
+}
+
+function readParamsFromUI() {
+  const n=id=>parseFloat($(id)?.value||0);
+  PARAMS.threshShort = Math.max(0,Math.round(n('p-threshShort')));
+  PARAMS.threshLong  = Math.max(0,Math.round(n('p-threshLong')));
+  PARAMS.minHits     = Math.max(1,Math.round(n('p-minHits')));
+  PARAMS.overlap     = Math.round(n('p-overlap'));
+  PARAMS.topk        = Math.max(1,Math.round(n('p-topk')));
+  PARAMS.temp        = Math.round(n('p-temp'))/100;
+  PARAMS.maxTokens   = Math.max(64,Math.round(n('p-maxTokens')));
+  PARAMS.prompt      = $('p-prompt')?.value||PARAMS.prompt;
+  PARAMS.lang        = LANG.current;
+  saveParams(PARAMS);
+}
+
+function openSettings()  { applyParamsToUI(); $('settingsPanel').classList.add('open'); $('settingsOverlay').classList.add('open'); }
+function closeSettings() { readParamsFromUI(); $('settingsPanel').classList.remove('open'); $('settingsOverlay').classList.remove('open'); }
+window.closeSettings = closeSettings;
+
+async function renderSpModelList() {
+  const models = await idbGetAll('models');
+  const el = $('sp-modelList');
+  if (!models.length) { el.innerHTML=`<p class="muted" style="font-size:.82rem">Geen modellen opgeslagen.</p>`; return; }
+  el.innerHTML = models.map(m=>`
+    <div class="model-row ${m.active?'model-active':''}">
+      <span class="model-name" title="${esc(m.name)}">${esc(m.name)}</span>
+      <span style="font-size:.74rem;color:var(--muted);white-space:nowrap">${m.role||'?'}</span>
+      <span class="model-size">${formatBytes(m.size)}</span>
+      ${m.active
+        ? `<span class="badge badge-pass">✓</span>
+           <button class="sm danger" onclick="window.__delModel('${esc(m.id)}')">${t('btnDelete')}</button>`
+        : `<button class="sm" onclick="window.__activateModel('${esc(m.id)}')">${t('btnActivate')}</button>
+           <button class="sm danger" onclick="window.__delModel('${esc(m.id)}')">${t('btnDelete')}</button>`
+      }
+    </div>`).join('');
+}
+
+function renderTree(requirements) {
+  const tree = $('reqTree'); tree.innerHTML='';
+  if (!requirements.length) return;
+  // Coverage badge
+  const analyzed = requirements.filter(r=>APP.analyses[r.id]&&APP.analyses[r.id].fuzzy);
+  const passed   = analyzed.filter(r=>APP.analyses[r.id].fuzzy.status==='pass').length;
+  const partial  = analyzed.filter(r=>APP.analyses[r.id].fuzzy.status==='partial').length;
+  if (analyzed.length) {
+    const pct = Math.round(((passed+partial*0.5)/requirements.length)*100);
+    const b = $('coverageBadge');
+    b.textContent=`${pct}% ${t('coverage')}`;
+    b.className=`badge ${pct>=75?'badge-pass':pct>=45?'badge-warn':'badge-fail'}`;
+  }
+  requirements.forEach(req=>{
+    const an = APP.analyses[req.id];
+    const fu = an?.fuzzy;
+    const li = document.createElement('li'); li.className='req-item';
+    const hdr = document.createElement('div');
+    hdr.className = `req-header ${APP.currentReqId===req.id?'active':''}`;
+    hdr.dataset.reqId = req.id;
+    hdr.onclick = ev => selectRequirement(req.id, ev.currentTarget);
+    const title = document.createElement('span'); title.className='req-title';
+    title.textContent = `${req.id}: ${req.text.substring(0,80)}${req.text.length>80?'…':''}`;
+    const status = document.createElement('span');
+    status.id = `status-${req.id}`;
+    status.className = `req-status ${fu?fu.status==='pass'?'status-pass':fu.status==='partial'?'status-partial':'status-fail':'status-pending'}`;
+    status.textContent = fu?(fu.status==='pass'?'✓':fu.status==='partial'?'△':'✗'):'⋯';
+    hdr.appendChild(title); hdr.appendChild(status); li.appendChild(hdr); tree.appendChild(li);
+  });
+  $('mainLayout').style.display='grid';
+}
+
+function updateSidebarStatus(reqId) {
+  const el=$(`status-${reqId}`); if(!el) return;
+  const fu=APP.analyses[reqId]?.fuzzy;
+  const se=APP.analyses[reqId]?.semantic;
+  const ll=APP.analyses[reqId]?.llm;
+  const pass = (fu?.status==='pass')||(se?.confidence>70)||(ll?.confidence>70);
+  const part = (fu?.status==='partial')||(se?.confidence>40)||(ll?.confidence>40);
+  el.className=`req-status ${pass?'status-pass':part?'status-partial':'status-fail'}`;
+  el.textContent = pass?'✓':part?'△':'✗';
+}
+
+function selectRequirement(reqId, headerEl) {
+  const req = APP.requirements.find(r=>r.id===reqId); if(!req) return;
+  APP.currentReqId = reqId;
+  document.querySelectorAll('.req-header').forEach(h=>h.classList.remove('active'));
+  if(headerEl) headerEl.classList.add('active');
+  const an = APP.analyses[reqId];
+  if (an) renderAnalysis(req, an);
+  else {
+    $('contentPanel').innerHTML=`
+      <div class="result-header">
+        <div class="result-heading-path">${esc(req.headingPath||'—')}</div>
+        <div class="result-heading-path">${esc(req.id)}</div>
+        <p class="result-req-text">${esc(req.text)}</p>
+      </div>
+      <p class="muted">${t('noAnalysis')}</p>`;
+  }
+}
+
+function renderAnalysis(req, an) {
+  const fu = an.fuzzy   || {status:'fail',matches:[]};
+  const se = an.semantic|| {confidence:0,fit:'S',matches:[]};
+  const ll = an.llm     || null;
+
+  const matchBlocks = (se.matches||[]).map(m=>`
+    <div class="match-item" onclick="window.openChunk('${esc(m.chunk.id)}')">
+      <div class="match-header">
+        <div class="match-source">${esc(m.chunk.docName)} — p.${m.chunk.pageNum}</div>
+        <div class="match-score">sim: ${nice(m.similarity)}</div>
+      </div>
+      <div class="match-text">${esc(m.chunk.text.substring(0,300))}${m.chunk.text.length>300?'…':''}</div>
+    </div>`).join('');
+
+  // Also show fuzzy matches if no semantic matches
+  const fuzzyBlocks = (!se.matches?.length && fu.matches?.length) ? fu.matches.map(m=>`
+    <div class="match-item" onclick="window.openChunk('${esc(m.chunk.id)}')">
+      <div class="match-header">
+        <div class="match-source">${esc(m.chunk.docName||'?')} — p.${m.chunk.pageNum||'?'}</div>
+        <div class="match-score">hits: ${m.hits?.length||0}</div>
+      </div>
+      <div class="match-text">${esc(m.chunk.text?.substring(0,300)||'')}${(m.chunk.text?.length||0)>300?'…':''}</div>
+    </div>`).join('') : '';
+
+  $('contentPanel').innerHTML=`
+    <div class="result-header">
+      <div class="result-heading-path">${esc(req.headingPath||'—')}</div>
+      <div class="result-heading-path">${esc(req.id)}</div>
+      <p class="result-req-text">${esc(req.text)}</p>
+    </div>
+    <div class="scores-grid">
+      <div class="score-card">
+        <h4>${t('fuzzyMatch')}</h4>
+        <div class="score-value">${fu.status==='pass'?'✓':fu.status==='partial'?'△':'✗'}</div>
+        <div style="font-size:.8rem;color:var(--muted);margin-top:.3rem">${fu.matches?.length||0} passages</div>
+      </div>
+      <div class="score-card">
+        <h4>${t('semanticMatch')}</h4>
+        <div class="score-value">${se.confidence}%</div>
+        <span class="fit-badge fit-${se.fit}">${se.fit}</span>
+      </div>
+      <div class="score-card">
+        <h4>${t('llmAssess')}</h4>
+        <div class="score-value">${ll?ll.confidence+'%':'—'}</div>
+        ${ll?`<span class="fit-badge fit-${ll.fit}">${ll.fit}</span>`:'<span class="muted" style="font-size:.8rem">niet geladen</span>'}
+      </div>
+    </div>
+    <div class="matches-section">
+      <h3>${t('matchingPassages')}</h3>
+      ${matchBlocks||fuzzyBlocks||`<p class="muted">${t('noAnalysis')}</p>`}
+    </div>
+    ${ll?`<div class="llm-block">
+      <h3>${t('llmAssessment')}</h3>
+      <pre>${esc(ll.explanation)}</pre>
+    </div>`:''}
+  `;
+}
+
+/* Chunk modal */
+window.openChunk = function(chunkId) {
+  const chunk = APP.chunks.find(c=>c.id===chunkId);
+  if(!chunk) return;
+  document.getElementById('chunkModal')?.remove();
+  const html=`<div class="modal" id="chunkModal">
+    <div class="modal-header">
+      <strong>${esc(chunk.docName)} — p.${chunk.pageNum}${chunk.headingPath?' | '+esc(chunk.headingPath):''}</strong>
+      <button class="modal-close" onclick="document.getElementById('chunkModal')?.remove()">✕</button>
+    </div>
+    <div style="white-space:pre-wrap;font-size:.9rem;line-height:1.6">${esc(chunk.text)}</div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+};
+
+
+/* ════════════════════════════════════════════════════════════════
+   §9  EVENTS & BOOT
+   ════════════════════════════════════════════════════════════════ */
+
+window.__activateModel = activateModel;
+window.__delModel      = deleteModel;
+
+/* Settings cog */
+$('cogBtn').addEventListener('click', openSettings);
+$('settingsLang').addEventListener('change', ()=>{
+  LANG.current=$('settingsLang').value;
+  document.documentElement.lang=LANG.current.toLowerCase();
+  applyTranslations(); applyParamsToUI();
+  renderTree(APP.requirements);
+  if(APP.currentReqId) selectRequirement(APP.currentReqId,null);
+});
+$('p-overlap').addEventListener('input',()=>$('p-ovVal').textContent=$('p-overlap').value+'%');
+$('p-temp').addEventListener('input',  ()=>$('p-tempVal').textContent=(parseFloat($('p-temp').value)/100).toFixed(2));
+
+/* Settings model import */
+$('sp-modelFile').addEventListener('change',()=>{ $('sp-importBtn').disabled=!$('sp-modelFile').files.length; });
+$('sp-importBtn').addEventListener('click', async()=>{
+  const f=$('sp-modelFile').files[0]; if(!f) return;
+  $('sp-importBtn').disabled=true;
+  const role=$('sp-modelRole').value;
+  try { await importModelFile(f,role); }
+  finally { $('sp-modelFile').value=''; $('sp-importBtn').disabled=true; }
+});
+$('sp-purgeBtn').addEventListener('click', purgeAllModels);
+$('sp-clearSessionBtn').addEventListener('click', clearSession);
+$('sp-resetBtn').addEventListener('click',()=>{
+  if(!confirm(t('resetConfirm'))) return;
+  PARAMS=Object.assign({},PARAM_DEFAULTS); saveParams(PARAMS);
+  LANG.current=PARAMS.lang; document.documentElement.lang=LANG.current.toLowerCase();
+  applyTranslations(); applyParamsToUI();
+  toast(t('settingsReset'));
+});
+
+/* Load AI models */
+$('loadModelsBtn').addEventListener('click', async()=>{
+  const btn=$('loadModelsBtn'); btn.disabled=true;
+  $('modelProgress').style.display='block';
+  const fill=$('modelProgressFill'), txt=$('modelProgressText'), status=$('modelStatus');
+  try {
+    const ok = await loadTransformers();
+    if (!ok) throw new Error('Transformers.js niet beschikbaar — inline het als bibliotheek.');
+    if (tfEnv) { tfEnv.allowLocalModels=false; tfEnv.useBrowserCache=true; }
+    status.textContent='Embedding model laden…'; setFill('modelProgressFill',10,'10%');
+
+    const embedId = 'Xenova/all-MiniLM-L6-v2';
+    APP.embedPipeline = await pipeline('feature-extraction', embedId, {
+      device: APP.webgpuAvailable ? 'webgpu' : 'cpu', dtype:'fp32',
+      progress_callback:x=>{ if(x.status==='progress'){ const p=10+Math.round((x.progress||0)*0.3); setFill('modelProgressFill',p,`Embedding ${Math.round(x.progress||0)}%`); } }
+    });
+    setFill('modelProgressFill',40,'40%'); status.textContent='LLM laden (Granite, ~1.5GB)…';
+
+    const llmId = 'onnx-community/granite-3.0-2b-instruct';
+    APP.llmPipeline = await pipeline('text-generation', llmId, {
+      device:'webgpu', dtype:'q4f16',
+      progress_callback:x=>{ if(x.status==='progress'){ const p=40+Math.round((x.progress||0)*0.6); setFill('modelProgressFill',p,`LLM ${Math.round(x.progress||0)}%`); } }
+    });
+    setFill('modelProgressFill',100,'100%');
+    APP.modelsLoaded=true;
+    status.textContent=t('modelLoaded');
+    $('modelProgress').style.display='none';
+  } catch(e) {
+    console.error('[models]',e);
+    status.textContent='Fout bij laden — zie console.';
+    $('modelProgress').style.display='none';
+    btn.disabled=false;
+    toast(e.message);
+  }
+});
+
+/* Clear cache */
+$('clearCacheBtn').addEventListener('click', async()=>{
+  if(!confirm(t('purgeConfirm')+' (incl. browser cache?)')) return;
+  localStorage.clear();
+  if('caches' in window) { const keys=await caches.keys(); await Promise.all(keys.map(k=>caches.delete(k))); }
+  await idbClear('models');
+  location.reload();
+});
+
+/* Document inputs → process button */
+function checkProcessEnable() {
+  $('processDocsBtn').disabled = !($('authDocInput').files.length && $('tentativeDocsInput').files.length);
+}
+$('authDocInput').addEventListener('change',checkProcessEnable);
+$('tentativeDocsInput').addEventListener('change',checkProcessEnable);
+
+/* Process documents */
+$('processDocsBtn').addEventListener('click', async()=>{
+  $('processDocsBtn').disabled=true;
+  $('docProgress').style.display='block';
+  try {
+    setFill('docProgressFill',5,'5%'); $('docProgressText').textContent=t('processing');
+    const authFile = $('authDocInput').files[0];
+    const authDoc  = await parsePdfFile(authFile,(txt,p)=>{ setFill('docProgressFill',5+Math.round(p*.25),txt); $('docProgressText').textContent=txt; });
+    const tentFiles = Array.from($('tentativeDocsInput').files);
+    const tentDocs  = [];
+    for(let i=0;i<tentFiles.length;i++){
+      const pBase=30+Math.round((i/tentFiles.length)*60);
+      const d=await parsePdfFile(tentFiles[i],(txt,p)=>{ setFill('docProgressFill',pBase+Math.round(p*.6*1/tentFiles.length),txt); $('docProgressText').textContent=txt; });
+      tentDocs.push(d);
+    }
+    APP.authDoc       = authDoc;
+    APP.tentativeDocs = tentDocs;
+    APP.chunks        = [];
+    tentDocs.forEach(d=>{ const ch=chunkDocument(d); ch.forEach(c=>APP.chunks.push(c)); });
+    APP.requirements  = extractRequirementsFromAuth(authDoc);
+    APP.analyses      = {};
+    setFill('docProgressFill',100,'100%');
+    if(!APP.requirements.length){ toast(t('errNoReqs')); return; }
+    $('runFuzzyBtn').disabled=false;
+    $('runAnalysisBtn').disabled=false;
+    renderTree(APP.requirements);
+    await saveSession();
+  } catch(e){ toast(e.message||'Fout'); console.error(e); }
+  finally { $('processDocsBtn').disabled=false; setTimeout(()=>$('docProgress').style.display='none',900); }
+});
+
+/* Run analysis buttons */
+$('runFuzzyBtn').addEventListener('click', async()=>{
+  $('runFuzzyBtn').disabled=true;
+  await runFuzzyOnly(()=>renderTree(APP.requirements));
+  $('runFuzzyBtn').disabled=false;
+});
+
+$('runAnalysisBtn').addEventListener('click', async()=>{
+  $('runAnalysisBtn').disabled=true;
+  // Run fuzzy first (worker), then semantic+LLM
+  $('analysisStatusTxt').textContent=t('analyzing');
+  setAnalysisProgress(true);
+  // Batch fuzzy via worker
+  await runFuzzyAnalysis((pct,lbl)=>{ setFill('analysisProgressFill',Math.round(pct*.4),lbl); $('analysisProgressText').textContent=lbl; });
+  renderTree(APP.requirements);
+  // Then semantic+LLM per requirement
+  const total=APP.requirements.length;
+  for(let i=0;i<total;i++){
+    const req=APP.requirements[i];
+    APP.analyses[req.id]=APP.analyses[req.id]||{};
+    APP.analyses[req.id].semantic = await semanticMatch(req,APP.chunks);
+    const top = APP.analyses[req.id].semantic.matches.map(m=>m.chunk);
+    APP.analyses[req.id].llm      = await assessWithLLM(req.text,top);
+    updateSidebarStatus(req.id);
+    if(APP.currentReqId===req.id) renderAnalysis(req,APP.analyses[req.id]);
+    const pct=40+Math.round(((i+1)/total)*60);
+    setFill('analysisProgressFill',pct,`${i+1}/${total}`);
+    $('analysisProgressText').textContent=`Sem+LLM ${i+1}/${total}: ${req.id}`;
+    await new Promise(r=>setTimeout(r,10));
+  }
+  $('analysisStatusTxt').textContent=t('done');
+  setAnalysisProgress(false);
+  $('runAnalysisBtn').disabled=false;
+  await saveSession();
+  renderTree(APP.requirements);
+});
+
+/* Expand / collapse sidebar */
+$('expandAllBtn').onclick   = ()=>document.querySelectorAll('.req-header').forEach(h=>h.classList.add('active'));
+$('collapseAllBtn').onclick = ()=>document.querySelectorAll('.req-header').forEach(h=>h.classList.remove('active'));
+
+/* Boot */
+async function boot() {
+  applyTranslations();
+  applyParamsToUI();
+  await renderSpModelList();
+  const restored = await loadSession();
+  if (restored && APP.requirements.length) {
+    $('runFuzzyBtn').disabled=false;
+    $('runAnalysisBtn').disabled=false;
+    renderTree(APP.requirements);
+    if (APP.currentReqId) {
+      const req=APP.requirements.find(r=>r.id===APP.currentReqId);
+      const an =APP.analyses[APP.currentReqId];
+      if(req&&an) renderAnalysis(req,an);
+    }
+  }
+  startAutosave();
+  console.info(`[Checkit ${APP_VERSION}] WebGPU:${APP.webgpuAvailable} PDF:${window.__pdfAvailable} ${location.protocol}`);
+}
+
+boot();
+</script>
+</body>
+</html>
