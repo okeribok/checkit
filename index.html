@@ -91,8 +91,8 @@ small{ color:var(--text-light); }
   <h2>Documents</h2>
   <div class="controls">
     <div class="upload-group">
-      <label>Authoritative Document (PDF of MarkDown)</label>
-      <input type="file" id="authDocInput" accept=".pdf,.md,.markdown" multiple />
+      <label>Authoritative Document (PDF)</label>
+      <input type="file" id="authDocInput" accept=".pdf" />
     </div>
     <div class="upload-group">
       <label>Tentative Documents (PDF, multiple)</label>
@@ -340,15 +340,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 async function parsePdfFile(file, updateProgress){
   updateProgress && updateProgress(`Parsing ${file.name}...`, 0);
-  if (file.name.endsWith('.md') || file.name.endsWith('.markdown')) {
-    const text = await file.text();
-    return {
-      name: file.name,
-      fullText: text,
-      pages: [{ pageNum: 1, text }],
-      markdown: text // No conversion needed
-    };
-  }
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
   const pages=[];
@@ -375,16 +366,6 @@ function convertToMarkdown(text){
 }
 
 function chunkDocument(doc){
-    if (doc.name.endsWith('.md') || doc.name.endsWith('.markdown')) {
-    return [{
-      id: `${doc.name}-chunk-1`,
-      docName: doc.name,
-      headingPath: '',
-      pageNum: 1,
-      text: doc.fullText,
-      tokens: doc.fullText.split(/\s+/).length
-    }];
-  }
   const lines = doc.markdown.split('\n');
   const chunks=[];
   let current = { headings:[], content:[], pageNum:1, tokens:0 };
@@ -418,16 +399,6 @@ function chunkDocument(doc){
 }
 
 function extractRequirementsFromAuth(authDoc){
-    if (authDoc.name.endsWith('.md') || authDoc.name.endsWith('.markdown')) {
-    // For Markdown, split on double-newlines and treat each paragraph as a potential requirement
-    const paragraphs = authDoc.fullText.split('\n\n').filter(p => p.trim().length > 0);
-    return paragraphs.map((text, idx) => ({
-      id: `REQ-${String(idx + 1).padStart(3, '0')}`,
-      headingPath: '', // Could parse # headers here if needed
-      text: text.trim(),
-      pageNum: 1
-    }));
-  }
   const chunks = chunkDocument(authDoc);
   const reqs = [];
   chunks.forEach((chunk,idx)=>{
@@ -580,26 +551,14 @@ async function processDocuments(){
   setProgress($('docProgressFill'), $('docProgressText'), 0, 'Starting parsing...');
 
   // Parse Auth
-const isAuthMarkdown = authFile.name.endsWith('.md') || authFile.name.endsWith('.markdown');
-const authDoc = await parsePdfFile(authFile, (txt, pct) =>
-  setProgress($('docProgressFill'), $('docProgressText'),
-    isAuthMarkdown ? 30 : pct * 0.3, // Skip progress for Markdown
-    isAuthMarkdown ? `Parsed ${authFile.name} (Markdown)` : txt
-  )
-);  
+  const authDoc = await parsePdfFile(authFile, (txt,pct)=> setProgress($('docProgressFill'), $('docProgressText'), pct*0.3, txt));
+  
   // Parse Tentative
   const tentativeParsed = [];
-  for (let i = 0; i < tentativeFiles.length; i++) {
+  for(let i=0;i<tentativeFiles.length;i++){
     const f = tentativeFiles[i];
-    const isMd = f.name.endsWith('.md') || f.name.endsWith('.markdown');
-    const pctBase = 30 + Math.round((i / tentativeFiles.length) * 60);
-    const parsed = await parsePdfFile(f, (txt, pct) =>
-      setProgress(
-        $('docProgressFill'), $('docProgressText'),
-        isMd ? pctBase + 30 : pctBase + Math.round(pct * 0.6),
-        isMd ? `Parsed ${f.name} (Markdown)` : txt
-      )
-    );
+    const pctBase = 30 + Math.round((i/tentativeFiles.length)*60);
+    const parsed = await parsePdfFile(f, (txt,pct)=> setProgress($('docProgressFill'), $('docProgressText'), pctBase + Math.round(pct*0.6), txt));
     tentativeParsed.push(parsed);
   }
 
@@ -744,5 +703,4 @@ $('collapseAllBtn').onclick = ()=> document.querySelectorAll('.requirement-heade
 
 </script>
 </body>
-
 </html>
