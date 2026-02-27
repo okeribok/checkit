@@ -173,7 +173,8 @@ Het doel is stabielere kwaliteit en minder variatie.
 ### Fase 1 – Deterministische basis
 
 -   feedbackmechanisme (duimpjes + comment via email)
-- optioneel docling 258 ipv pdf.js
+- optioneel docling 258 of MuPDF WASM ipv pdf.js
+- ondersteunen van meerdere bestandsformaten (excel/csv en markdown)
 - granite 4 (zowel 1b als micro) ipv granite 3
 - iteratief verbeteren met feitelijke use cases
 - heading-gebaseerde chunking
@@ -193,7 +194,6 @@ Het doel is stabielere kwaliteit en minder variatie.
 -   interne conflicten
 -   definities/termen
 -   versie- en bronkoppeling
--   documentgraaf
 
 ### Doorlopend
 
@@ -328,7 +328,7 @@ The model produces numbers (scores, similarity). Never text the user reads as co
 ## What comes next (backlog order)
 
 1.  **`./lib/` vendor setup** — pin and download `pdf.min.js` + `pdf.worker.min.js` (3.11.174)
-2.  **Docling 258M integration** — replace pdf.js text extraction with structural section/heading output; update `extractSections()` to consume Docling output
+2.  **Docling 258M integration** — replace pdf.js text extraction with structural section/heading output; update `extractSections()` to consume Docling output (and/or MuPDF WASM)
 3.  **Granite 258M Embedding** — implement Chapter 6: load model from IDB → transformers.js pipeline (from `./lib/transformers.min.js`); `embedText()` + cosine rank; `disposeInferencePipeline()` with verified VRAM release
 4.  **Heatmap / Coverage Matrix** — visual grid: requirements × sections, cell colour by match strength
 5.  **CSV Export** — one-click download of findings matrix
