@@ -8,7 +8,7 @@ High Priority: Core & Security
  * Model Unloading/Eviction: Add a "Purge Models" button in Settings that wipes the IndexedDB object stores to prevent Ivanti MDM sync bloat.
  * Vanilla i18n: Implement a simple dictionary-based translation system for all UI strings (NL/EN).
 Medium Priority: Analysis & Logic
- * Some better PDF parsing solution, such as MuPDF or Docling 258M Integration: Implement the WebGPU version for document structure analysis and OCR.
+ * Some better PDF parsing solution, such as MuPDF (via WASM, like https://github.com/Hopding/pdf-lib or https://github.com/ArtifexSoftware/mupdf) or Docling 258M Integration: Implement the WebGPU version for document structure analysis and OCR.
  * Deterministic Matcher: Build the regex-based heading and requirement-ID extractor (runs before any AI).
  * Granite 278 Embedding: Add semantic matching using cosine similarity (Dot product) for the "Assisted" check layer.
  * Smarter Chunking: Move from fixed-length to structural chunking (based on headings detected by Docling).
