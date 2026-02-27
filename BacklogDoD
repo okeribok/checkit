@@ -1,0 +1,51 @@
+📋 Backlog (Prioritized)
+High Priority: Core & Security
+ * Strict Content Security Policy (CSP): Implement meta-tag headers to block all outbound connections (connect-src 'none'), enforcing the zero-trust promise. (Dependencies are stored in a directory next to the main html/js file)
+ * Allow multiple authoritative documents to upload
+ * Create a set of demo documents that demonstrate how this works. For example: requirements for a private person buying a phone, against a specification or review of a single phone. 
+ * Chaptered Source Structure: Organize the single HTML file into the 7 chapters (Header, Vendored Libs, Model Manager, State Engine, Core Logic, AI Pipeline, UI).
+ * Model Sideloading (Chapter 3): Create the "Import" UI to allow users to select local model files and store them in IndexedDB (NOT localStorage).
+ * Model Unloading/Eviction: Add a "Purge Models" button in Settings that wipes the IndexedDB object stores to prevent Ivanti MDM sync bloat.
+ * Vanilla i18n: Implement a simple dictionary-based translation system for all UI strings (NL/EN).
+Medium Priority: Analysis & Logic
+ * Some better PDF parsing solution, such as MuPDF or Docling 258M Integration: Implement the WebGPU version for document structure analysis and OCR.
+ * Deterministic Matcher: Build the regex-based heading and requirement-ID extractor (runs before any AI).
+ * Granite 278 Embedding: Add semantic matching using cosine similarity (Dot product) for the "Assisted" check layer.
+ * Smarter Chunking: Move from fixed-length to structural chunking (based on headings detected by Docling).
+Low Priority: Enhanced UX
+ * Heatmap & Coverage View: Visual matrix showing which requirements are covered by which document sections.
+ * CSV Export: One-click copy-to-clipboard or download of the findings matrix.
+✅ Definition of Done (DoD)
+Deployment & Portability
+ * Single-File Logic: All logic, styles, and dependencies are vendored into one .html file.
+ * Offline Execution: The app must run via file:/// protocol with zero internet access.
+ * Browser Storage Partitioning:
+   * localStorage: Used ONLY for small settings (<1MB) like theme and email.
+   * IndexedDB: Used for models and document cache.
+ * Ivanti-Friendly Sync: An explicit "Clear Local Data" and "Unload Models" function must exist to reduce profile size to <1MB before a user logs off.
+Architectural Integrity (ATAM)
+ * Cognitive Load: The entire app logic (excluding vendored libs) must not exceed 2500 lines of code.
+ * Table of Contents: The code must maintain a clear, commented TOC at the top of the <script> tag.
+ * No Compiled Tools: No TypeScript, Minifiers (for your code), or Bundlers. Raw ES6+ Javascript only.
+ * Composability: Functions must be "pure" where possible (input -> output) to allow for easy extraction into a repository.
+Performance & Hardware
+ * WebGPU Target: Verified to run on DWR laptops and flagship Android phones (Pixel 8+, S23+) with >11GB RAM.
+ * Crash-Only Design: The app saves the current "session" state to IndexedDB every 5 seconds. If the tab crashes, it reloads exactly where the user left off.
+ * Manual Memory Management: The app must explicitly call .dispose() on WebGPU tensors/models when the "Unload" trigger is activated.
+🛠 Programming Table of Contents (Chaptered Development)
+Your single file should follow this strict internal sequence to maintain maintainability, for example:
+```
+/* CHECKIT SINGLE-FILE APP TOC
+  1. CONSTANTS & CSP CONFIG
+  2. VENDORED DEPENDENCIES (pdf.js, transformers.js, docling.js)
+  3. SYSTEM: IndexedDB & Model Management (Sideload/Unload)
+  4. SYSTEM: State Persistence (Crash-only recovery)
+  5. LOGIC: Document Processing (Deterministic / Docling)
+  6. LOGIC: AI Inference (Granite Embeddings & Semantic Search)
+  7. UI: Components (Heatmap, Settings, Results)
+  8. UI: Event Listeners & Boot Sequence
+*/
+```
+A note on Model Unloading
+When using transformers.js with WebGPU, simply deleting the file from IndexedDB isn't enough for the current session. You must ensure the developer includes a pipeline.dispose() or similar cleanup to clear the VRAM/RAM immediately so the user can see the memory usage drop in the browser's Task Manager.
+
